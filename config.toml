@@ -46,10 +46,22 @@ fail_on_unverified = true
 probe = "builtin"
 allowed_targets = ["127.0.0.1", "10.2.102.143"]
 assets = [
-  { id = "sshd", target = "127.0.0.1", port = 22, label = "本机 sshd" },
-  { id = "fake-ssh", target = "127.0.0.1", port = 2222, label = "演示假服务" },
+  { id = "sshd", target = "127.0.0.1", port = 22, kind = "ssh", label = "本机 sshd" },
+  { id = "fake-ssh", target = "127.0.0.1", port = 2222, kind = "ssh", label = "演示假服务" },
+  { id = "demo-web", target = "127.0.0.1", port = 8081, kind = "http", label = "演示站" },
 ]
 timeout_sec = 2.0
+
+[agent]
+enabled = true
+model = "deepseek-chat"
+api = "https://api.deepseek.com/v1"
+max_steps = 8
+api_timeout_sec = 60
+tool_timeout_sec = 45
+max_output_bytes = 12000
+allow_active_scans = true
+scan_cooldown_sec = 60
 
 [reach]
 project_dir = "demo/demo_project"

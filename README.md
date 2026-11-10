@@ -18,6 +18,8 @@
                           └─ 解析失败也入账（parse_error）
 体检管线：扫描器清单 → OSV 按 CVE 反查 → 别名并查集 → 版本范围 → 作用域 → import 可达性
 资产验真：内置 SSH 探测（banner + KEXINIT）→ banner 单独证据一律“存疑”
+AI 调查员：用户提问 → 模型选工具 → 工具层白名单执行 → 结果回填 → 带引用结论
+             （只读 + 建议；裁决与处置仍由确定性引擎/人工完成）
 ```
 
 进程（systemd，均以 `li` 运行，端口 >1024）：
@@ -45,10 +47,43 @@ cd ~/nightwatch
 监控台：实时事件流（每条的原始日志行与哈希可展开）→ 封禁名单倒计时/一键解封 →
 「未处置」区解释**为什么没封** → 体检页运行漏洞验真 → 资产页探测 → 日报页校验哈希链。
 
+## AI 调查员（大模型驱动）
+
+监控台「AI 调查」页签是一个工具调用型 Agent：模型（默认 `deepseek-chat`）自己决定调用哪个工具、
+看哪条证据，最后输出带 `#事件号` 引用的结论。
+
+| 工具 | 作用 |
+|---|---|
+| `guard_status` / `query_events` / `get_event` / `verify_chain` | 只读查看守夜人状态与证据链 |
+| `audit_dependencies` | 运行漏洞验真管线 |
+| `probe_asset(id)` | 内置探测（SSH banner+握手 / HTTP） |
+| `nmap_scan(id)` / `nikto_scan(id)` / `whatweb_scan(id)` | 对**配置中的授权资产**做主动检查 |
+| `host_audit` | 本机只读巡检（监听端口/负载/内存/磁盘） |
+| `propose_ban(ip, reason, evidence_ids)` | 只生成待人工确认的封禁建议 |
+
+安全边界（工具层强制，不依赖模型自觉）：
+- 扫描工具只接受 `asset_id`，host/port 从 `config.toml` 解析并二次校验 IP 白名单；
+- 模型不能调用封禁/解封；`propose_ban` 只是建议，必须在监控台点「批准封禁」才会执行；
+- 所有工具调用与 Agent 结论写入哈希链（`agent_tool` / `agent_run`）；
+- 结论里的 `#id` 会被回查，引用不存在的事件会标注「可信度存疑」；
+- 主动扫描同一资产有 60 秒冷却；命令全部用参数列表执行，无 shell 拼接。
+
+启用需要模型密钥（只写入服务器本地，权限 600）：
+
+```bash
+ssh li@10.2.102.143
+umask 077
+printf 'DEEPSEEK_API_KEY=%s\n' '<你的 DeepSeek Key>' > ~/nightwatch/data/agent.env
+sudo systemctl restart nightwatch
+```
+
+依赖工具（已安装）：`nmap`、`nikto`、`whatweb`。未配置密钥或断网时，AI 页签提示不可用，
+确定性守卫与全部演示照常运行。LYNIS 因单次 >90 秒，未接入交互链路。
+
 ## 测试
 
 ```bash
-.venv/bin/python -m pytest -q          # 20 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名
+.venv/bin/python -m pytest -q          # 25 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent
 .venv/bin/python scripts/selftest.py   # 10 条端到端（需服务已启动）
 ```
 
@@ -114,3 +149,4 @@ sudo journalctl -u nightwatch-demo --since today
 - 内置 SSH 探测不依赖 nmap；`nmap` 引擎未启用（方案中“骗过 nmap”的表述需按实际实现调整）。
 - `auth.log` 解析器保留但默认不接（logrotate 会丢 ACL，演示不依赖它）。
 - 不支持多租户/账号体系；内网单机部署，靠 token 保护监控台。
+- AI 调查员的结论仍可能出错；它没有处置权，且引用会被回查，但不应把它的建议当裁决。

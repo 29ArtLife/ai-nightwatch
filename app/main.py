@@ -119,6 +119,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(svc.chain())
         if path == "/api/report":
             return self._text(svc.report())
+        if path == "/api/agent/info":
+            return self._json(svc.agent_info())
+        if path == "/api/agent/actions":
+            return self._json(svc.agent_actions())
         return self._json({"error": "not found"}, 404)
 
     def _static(self, path):
@@ -187,6 +191,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"auto_response": self.service.set_auto(bool(body.get("auto_response", True)))})
             if path == "/api/audit/run":
                 return self._json(self.service.audit())
+            if path == "/api/agent/chat":
+                body = self._body()
+                msg = str(body.get("message", "")).strip()
+                if not msg:
+                    return self._json({"ok": False, "error": "message 为空"}, 400)
+                hist = body.get("history") if isinstance(body.get("history"), list) else []
+                return self._json(self.service.agent_chat(msg, hist))
+            m = re.fullmatch(r"/api/agent/actions/([^/]+)/(approve|reject)", path)
+            if m:
+                body = self._body()
+                op = str(body.get("operator", "operator"))
+                if m.group(2) == "approve":
+                    row = self.service.agent_approve(m.group(1), op)
+                    if not row:
+                        return self._json({"error": "建议不存在或已处理"}, 404)
+                    return self._json({"ok": True, "event": row})
+                ok = self.service.agent_reject(m.group(1), op)
+                return self._json({"ok": ok})
             m = re.fullmatch(r"/api/bans/([^/]+)/rollback", path)
             if m:
                 body = self._body()

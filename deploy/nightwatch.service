@@ -8,6 +8,7 @@ User=li
 Group=li
 WorkingDirectory=/home/li/nightwatch
 ExecStart=/home/li/nightwatch/.venv/bin/python -m app.main
+EnvironmentFile=-/home/li/nightwatch/data/agent.env
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

@@ -1,6 +1,7 @@
 """单写线程：采集线程只解析投递，写线程串行落库 → 事件顺序天然等于 id 顺序。"""
 from __future__ import annotations
 
+import json
 import queue
 import threading
 import time
@@ -60,8 +61,20 @@ class Worker:
                 pass
             time.sleep(1)
 
+    def enqueue_event(self, kind: str, ip: str, evidence: dict):
+        """Agent 等外部写入统一走单写线程，保证 id 顺序与 SSE 顺序一致。"""
+        self.q.put(("__event__", kind, json.dumps(evidence, ensure_ascii=False), ip, 0))
+
     def process_line(self, source_name: str, parser_name: str, line: str,
                      source_file: str = "", offset: int = 0):
+        if source_name == "__event__":
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                ev = {"raw": line[:500]}
+            row = self.store.append_event(now_ts(), parser_name, source_file, ev)
+            self.publish(row)
+            return
         parser = PARSERS.get(parser_name)
         try:
             if parser is None:

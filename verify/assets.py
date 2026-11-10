@@ -100,7 +100,49 @@ def probe_ssh(host: str, port: int, allowed: set[str], timeout: float) -> dict:
     return obs
 
 
+def probe_http(host: str, port: int, allowed: set[str], timeout: float) -> dict:
+    obs = {"target": host, "port": port, "banner": "", "product": "HTTP",
+           "version": "", "handshake": "n/a", "engine": "builtin", "reason": ""}
+    try:
+        s = _connect(host, port, allowed, timeout)
+    except UnauthorizedTarget:
+        raise
+    except OSError as e:
+        obs["reason"] = f"连接失败：{e}"
+        return obs
+    try:
+        s.settimeout(timeout)
+        s.sendall(b"HEAD / HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        raw = b""
+        while len(raw) < 4096:
+            chunk = s.recv(1024)
+            if not chunk:
+                break
+            raw += chunk
+        text = raw.decode("latin-1", "replace")
+        line = text.splitlines()[0] if text else ""
+        server = ""
+        for h in text.splitlines():
+            if h.lower().startswith("server:"):
+                server = h.split(":", 1)[1].strip()
+        obs["banner"] = f"{line} | Server: {server}" if server else line
+        obs["product"] = server.split("/")[0] if server else "HTTP"
+        obs["version"] = server.split("/", 1)[1] if "/" in server else ""
+        obs["handshake"] = "present" if line.startswith("HTTP/") else "missing"
+    except OSError as e:
+        obs["reason"] = f"读取失败：{e}"
+    finally:
+        s.close()
+    return obs
+
+
 def verdict(obs: dict) -> dict:
+    if obs.get("handshake") == "n/a":
+        if obs.get("banner"):
+            return {"state": "PROTOCOL_CONFIRMED", "cve_linked": 0,
+                    "note": "确认是 HTTP 服务；banner 可伪造，版本未做登录核对"}
+        return {"state": "UNREACHABLE", "cve_linked": 0,
+                "note": "未取得 HTTP 响应，未识别；不代表安全"}
     banner = obs.get("banner", "")
     hs = obs.get("handshake")
     if not banner:
@@ -133,7 +175,8 @@ def probe_all(cfg: dict) -> list[dict]:
     timeout = float(cfg["asset"].get("timeout_sec", 2.0))
     out = []
     for asset in cfg["asset"]["assets"]:
-        obs = probe_ssh(asset["target"], int(asset["port"]), allowed, timeout)
+        fn = probe_http if asset.get("kind") == "http" else probe_ssh
+        obs = fn(asset["target"], int(asset["port"]), allowed, timeout)
         obs["id"] = asset["id"]
         obs["label"] = asset.get("label", asset["id"])
         obs.update(verdict(obs))

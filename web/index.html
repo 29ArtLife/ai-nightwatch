@@ -21,6 +21,7 @@
     <button class="tab active" data-tab="patrol">巡逻</button>
     <button class="tab" data-tab="audit">体检</button>
     <button class="tab" data-tab="assets">资产</button>
+    <button class="tab" data-tab="agent">AI 调查</button>
     <button class="tab" data-tab="report">日报 · 留痕</button>
   </nav>
 </header>
@@ -56,6 +57,35 @@
       <span class="hint">仅白名单；banner 证据一律降级核验</span>
     </div>
     <div id="assets" class="assets"></div>
+  </section>
+
+  <section id="tab-agent" class="tabpane">
+    <div class="agent-wrap">
+      <div class="panel">
+        <h2>AI 安全调查员 <span class="hint" id="agent-model"></span></h2>
+        <div class="quick">
+          <button data-q="巡检本机：查看守卫状态、监听端口、最近的处置事件">巡检本机</button>
+          <button data-q="调查最近的封禁事件，解释证据并给出建议">调查最近封禁</button>
+          <button data-q="对 demo-web 做一次 Web 配置检查，并解释发现">检查演示站</button>
+          <button data-q="运行依赖漏洞验真，并总结最需要先修的 3 个">依赖体检</button>
+        </div>
+        <div id="agent-log" class="agent-log">
+          <div class="empty">让 AI 调查员收集证据、调用工具、给出带引用的结论</div>
+        </div>
+        <div class="agent-input">
+          <textarea id="agent-msg" rows="2" placeholder="例如：查一下最近 10 分钟有没有爆破，并核对证据"></textarea>
+          <button id="agent-send" class="primary">调查</button>
+        </div>
+        <div id="agent-status" class="hint"></div>
+      </div>
+      <div class="panel">
+        <h2>待确认处置建议</h2>
+        <div id="agent-actions" class="bans">
+          <div class="empty">暂无</div>
+        </div>
+        <p class="hint">AI 只能建议；批准后才会写入封禁名单。每次工具调用都会写入证据链。</p>
+      </div>
+    </div>
   </section>
 
   <section id="tab-report" class="tabpane">

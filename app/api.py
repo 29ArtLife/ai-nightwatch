@@ -1,6 +1,8 @@
 """业务服务层：只返回 dict/str，不碰 HTTP。"""
 from __future__ import annotations
 
+import os
+
 from .report import build as build_report
 from .store import now_iso
 from verify.assets import probe_all
@@ -13,6 +15,7 @@ class Service:
         self.store = store
         self.broker = broker
         self.worker = worker
+        self.pending: dict[str, dict] = {}
 
     def status(self) -> dict:
         v = self.store.verify_chain()
@@ -59,3 +62,55 @@ class Service:
     def set_auto(self, enabled: bool) -> bool:
         self.worker.auto_enabled = bool(enabled)
         return self.worker.auto_enabled
+
+    # ---------- AI 调查员 ----------
+    def agent_info(self) -> dict:
+        from agent.tools import build_specs
+        return {
+            "enabled": bool(self.cfg.get("agent", {}).get("enabled")),
+            "model": self.cfg.get("agent", {}).get("model"),
+            "key_present": bool(os.environ.get("DEEPSEEK_API_KEY")),
+            "assets": [{"id": a["id"], "kind": a.get("kind", "ssh"),
+                        "label": a.get("label", a["id"])}
+                       for a in self.cfg["asset"]["assets"]],
+            "tools": [s["function"]["name"] for s in build_specs(self.cfg)],
+        }
+
+    def agent_chat(self, message: str, history: list[dict] | None = None) -> dict:
+        from agent.runner import run_agent
+        from agent.tools import Ctx
+        ctx = Ctx(cfg=self.cfg, store=self.store, worker=self.worker,
+                  service=self, pending=self.pending)
+        return run_agent(message, self.cfg, ctx, history=history)
+
+    def agent_actions(self) -> list[dict]:
+        return [a for a in self.pending.values() if a.get("status") == "pending"]
+
+    def agent_approve(self, rid: str, operator: str) -> dict | None:
+        a = self.pending.get(rid)
+        if not a or a.get("status") != "pending":
+            return None
+        sig = {"ip": a["ip"], "rule_id": "AI_RECOMMENDED.v1",
+               "window": {"start": a["created_at"], "end": now_iso(), "sec": 0},
+               "counts": {}, "thresholds": {}, "sample_raw": [a["reason"]],
+               "ua": "ai-agent"}
+        verdict = {"action": "ban", "reason_code": "AI_RECOMMENDED",
+                   "ttl_sec": int(self.cfg["enforce"]["default_ttl_sec"]),
+                   "evidence": {"rule_id": "AI_RECOMMENDED.v1",
+                                "recommendation_id": rid,
+                                "approved_by": operator or "operator",
+                                "evidence_event_ids": a["evidence_event_ids"],
+                                "reason": a["reason"], "counts": {},
+                                "negatives": []}}
+        row = self.worker.enforcer.handle(sig, verdict, now_iso())
+        a["status"] = "approved"
+        a["approved_by"] = operator or "operator"
+        return row
+
+    def agent_reject(self, rid: str, operator: str) -> bool:
+        a = self.pending.get(rid)
+        if not a or a.get("status") != "pending":
+            return False
+        a["status"] = "rejected"
+        a["rejected_by"] = operator or "operator"
+        return True

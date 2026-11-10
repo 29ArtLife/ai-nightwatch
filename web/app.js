@@ -371,6 +371,141 @@ async function verifyChain() {
   $("#chain-result").style.color = v.ok ? "var(--green)" : "var(--red)";
 }
 
+/* ---------- AI 调查员 ---------- */
+let AGENT_INFO = null;
+let AGENT_HISTORY = [];
+
+function agentBubble(role, text) {
+  const box = $("#agent-log");
+  if (box.querySelector(".empty")) box.innerHTML = "";
+  const el = document.createElement("div");
+  el.className = "msg " + (role === "user" ? "user" : "ai");
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = role === "user" ? "你" : "AI 调查员";
+  const body = document.createElement("div");
+  body.className = "body";
+  body.textContent = text;
+  el.append(who, body);
+  box.append(el);
+  box.scrollTop = box.scrollHeight;
+  return el;
+}
+
+function renderTrace(el, trace) {
+  if (!trace || !trace.length) return;
+  const det = document.createElement("details");
+  const sum = document.createElement("summary");
+  sum.textContent = `工具调用 ${trace.length} 次（点击查看）`;
+  const box = document.createElement("div");
+  box.className = "trace";
+  for (const t of trace) {
+    const row = document.createElement("div");
+    row.className = "t";
+    const n = document.createElement("span"); n.className = "n"; n.textContent = `#${t.step} ${t.tool}`;
+    const ok = document.createElement("span"); ok.className = t.ok ? "ok" : "bad";
+    ok.textContent = t.ok ? "OK" : "ERROR";
+    const ms = document.createElement("span"); ms.textContent = `${t.duration_ms}ms`;
+    row.append(n, ok, ms);
+    box.append(row);
+    const pre = document.createElement("pre");
+    pre.style.margin = "2px 0 6px 14px";
+    pre.textContent = JSON.stringify(t.args) + "\n" + (t.result_preview || "");
+    box.append(pre);
+  }
+  det.append(sum, box);
+  el.append(det);
+}
+
+async function loadAgentInfo() {
+  try {
+    const r = await api("/api/agent/info");
+    AGENT_INFO = await r.json();
+    $("#agent-model").textContent = `${AGENT_INFO.model} · ${AGENT_INFO.tools.length} 个工具`;
+    if (!AGENT_INFO.enabled) $("#agent-status").textContent = "AI 调查已在配置中关闭；确定性守卫仍在运行。";
+    else if (!AGENT_INFO.key_present) $("#agent-status").textContent = "未配置 DEEPSEEK_API_KEY，AI 调查不可用；确定性守卫仍在运行。";
+    else $("#agent-status").textContent = "";
+  } catch (_) {}
+}
+
+async function sendAgent(text) {
+  text = (text || "").trim();
+  if (!text) return;
+  if (AGENT_INFO && (!AGENT_INFO.enabled || !AGENT_INFO.key_present)) {
+    $("#agent-status").textContent = AGENT_INFO.enabled ? "模型密钥未配置" : "AI 调查已关闭";
+    return;
+  }
+  agentBubble("user", text);
+  $("#agent-msg").value = "";
+  const btn = $("#agent-send");
+  btn.disabled = true;
+  $("#agent-status").innerHTML = '<span class="spin"></span> 调查中，可能需要几十秒…';
+  try {
+    const r = await api("/api/agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: text, history: AGENT_HISTORY.slice(-6) }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const el = agentBubble("ai", d.answer);
+      renderTrace(el, d.trace);
+      AGENT_HISTORY.push({ role: "user", content: text },
+                         { role: "assistant", content: d.answer });
+      if (AGENT_HISTORY.length > 12) AGENT_HISTORY = AGENT_HISTORY.slice(-12);
+      $("#agent-status").textContent = `完成：${d.steps} 步 · ${d.trace.length} 次工具调用`;
+      refreshStatus();
+      loadAgentActions();
+    } else {
+      agentBubble("ai", "调查失败：" + (d.error || "未知错误"));
+      $("#agent-status").textContent = "调用失败";
+    }
+  } catch (e) {
+    agentBubble("ai", "请求失败：" + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadAgentActions() {
+  try {
+    const r = await api("/api/agent/actions");
+    if (!r.ok) return;
+    const list = await r.json();
+    const box = $("#agent-actions");
+    box.innerHTML = "";
+    if (!list.length) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = "暂无"; box.append(e); return;
+    }
+    for (const a of list) {
+      const item = document.createElement("div");
+      item.className = "ban-item";
+      const g = document.createElement("div"); g.className = "grow";
+      const ip = document.createElement("div"); ip.className = "mono"; ip.textContent = a.ip;
+      const meta = document.createElement("div"); meta.className = "hint";
+      meta.textContent = `${a.reason} · 证据 ${a.evidence_event_ids.map((x) => "#" + x).join(",")}`;
+      g.append(ip, meta);
+      const ok = document.createElement("button"); ok.className = "danger"; ok.textContent = "批准封禁";
+      ok.addEventListener("click", async () => {
+        const operator = prompt("批准人", "demo") || "demo";
+        await api(`/api/agent/actions/${a.id}/approve`, {
+          method: "POST", body: JSON.stringify({ operator }),
+        });
+        loadAgentActions(); refreshBans(); refreshStatus();
+      });
+      const no = document.createElement("button"); no.textContent = "拒绝";
+      no.addEventListener("click", async () => {
+        await api(`/api/agent/actions/${a.id}/reject`, {
+          method: "POST", body: JSON.stringify({ operator: "demo" }),
+        });
+        loadAgentActions();
+      });
+      item.append(g, ok, no);
+      box.append(item);
+    }
+  } catch (_) {}
+}
+
 /* ---------- 交互 ---------- */
 document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
   document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
@@ -379,6 +514,7 @@ document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () 
   $("#tab-" + t.dataset.tab).classList.add("active");
   if (t.dataset.tab === "audit") loadAudit();
   if (t.dataset.tab === "report") runReport();
+  if (t.dataset.tab === "agent") { loadAgentInfo(); loadAgentActions(); }
 }));
 
 $("#run-audit").addEventListener("click", runAudit);
@@ -389,5 +525,16 @@ $("#auto").addEventListener("change", async (e) => {
   await api("/api/control", { method: "POST", body: JSON.stringify({ auto_response: e.target.checked }) });
   refreshStatus();
 });
+$("#agent-send").addEventListener("click", () => sendAgent($("#agent-msg").value));
+$("#agent-msg").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendAgent($("#agent-msg").value);
+});
+document.querySelectorAll(".quick button").forEach((b) => b.addEventListener("click", () => {
+  const q = b.dataset.q;
+  $("#agent-msg").value = q;
+  sendAgent(q);
+}));
+loadAgentInfo();
+setInterval(loadAgentActions, 10000);
 
 bootstrap();
