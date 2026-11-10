@@ -38,6 +38,16 @@ def test_success_negative_evidence():
     assert v["evidence"]["negatives"]
 
 
+def test_success_after_threshold_alerts():
+    d = Detector(CFG)
+    sig = None
+    for i in range(1, 6):
+        sig = d.feed(ev("login_fail", "127.0.0.7", i), T0 + timedelta(seconds=i)) or sig
+    sig = d.feed(ev("login_success", "127.0.0.7", 6), T0 + timedelta(seconds=6))
+    v = decide(sig, CFG, "x", whitelisted=False, already_banned=False, auto_enabled=True)
+    assert v["action"] == "alert" and v["reason_code"] == "SUCCESS_AFTER_THRESHOLD"
+
+
 def test_whitelist_never_ban():
     d = Detector(CFG)
     sig = None

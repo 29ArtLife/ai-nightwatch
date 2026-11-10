@@ -29,7 +29,9 @@ class Service:
             "osv_mode": self.cfg["osv"]["mode"],
         }
 
-    def events(self, since: int = 0, limit: int = 500) -> list[dict]:
+    def events(self, since: int = 0, limit: int = 500, latest: bool = False) -> list[dict]:
+        if latest:
+            return self.store.recent_events(min(int(limit), 500))
         return self.store.events_since(since, min(int(limit), 500))
 
     def bans(self) -> list[dict]:

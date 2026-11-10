@@ -112,7 +112,7 @@ def probe_http(host: str, port: int, allowed: set[str], timeout: float) -> dict:
         return obs
     try:
         s.settimeout(timeout)
-        s.sendall(b"HEAD / HTTP/1.0\r\nHost: localhost\r\n\r\n")
+        s.sendall(b"GET / HTTP/1.0\r\nHost: localhost\r\n\r\n")
         raw = b""
         while len(raw) < 4096:
             chunk = s.recv(1024)
@@ -126,8 +126,8 @@ def probe_http(host: str, port: int, allowed: set[str], timeout: float) -> dict:
             if h.lower().startswith("server:"):
                 server = h.split(":", 1)[1].strip()
         obs["banner"] = f"{line} | Server: {server}" if server else line
-        obs["product"] = server.split("/")[0] if server else "HTTP"
-        obs["version"] = server.split("/", 1)[1] if "/" in server else ""
+        obs["product"] = "HTTP"
+        obs["version"] = server
         obs["handshake"] = "present" if line.startswith("HTTP/") else "missing"
     except OSError as e:
         obs["reason"] = f"读取失败：{e}"
@@ -137,7 +137,7 @@ def probe_http(host: str, port: int, allowed: set[str], timeout: float) -> dict:
 
 
 def verdict(obs: dict) -> dict:
-    if obs.get("handshake") == "n/a":
+    if obs.get("product") == "HTTP" or obs.get("handshake") == "n/a":
         if obs.get("banner"):
             return {"state": "PROTOCOL_CONFIRMED", "cve_linked": 0,
                     "note": "确认是 HTTP 服务；banner 可伪造，版本未做登录核对"}

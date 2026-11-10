@@ -216,7 +216,8 @@ class Store:
                     "INSERT INTO bans(ip,until_ts,decision_event,created_ts,operator,reason) "
                     "VALUES(?,?,?,?,?,?) ON CONFLICT(ip) DO UPDATE SET "
                     "until_ts=excluded.until_ts, decision_event=excluded.decision_event, "
-                    "revoked_ts=NULL, operator=excluded.operator, reason=excluded.reason",
+                    "created_ts=excluded.created_ts, revoked_ts=NULL, "
+                    "operator=excluded.operator, reason=excluded.reason",
                     (ip, until_ts, decision_event, now_iso(), operator, reason))
                 self._w.execute("COMMIT")
             except Exception:

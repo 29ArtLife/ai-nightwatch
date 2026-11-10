@@ -237,7 +237,7 @@ function startPolling() {
 async function bootstrap() {
   await refreshStatus();
   try {
-    const r = await api("/api/events?since=0&limit=200");
+    const r = await api("/api/events?latest=1&limit=200");
     if (r.ok) {
       (await r.json()).forEach((row) => { renderEvent(row); lastId = Math.max(lastId, row.id); });
     }

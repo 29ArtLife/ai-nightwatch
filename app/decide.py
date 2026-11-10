@@ -41,6 +41,10 @@ def decide(sig: dict, cfg: dict, now_iso: str, *, whitelisted: bool,
                        "", ttl)
 
     if ev["counts"]["success"] > 0:
+        if ev["counts"]["fail"] >= thresholds.get("fail", 5):
+            return verdict("alert", "SUCCESS_AFTER_THRESHOLD",
+                           f"失败已达阈值 {ev['counts']['fail']} 次后出现成功登录，"
+                           f"可能是口令被猜中，需人工复核")
         return verdict("observe", "SUCCESS_IN_WINDOW",
                        f"窗口内失败 {ev['counts']['fail']} 次但成功登录 "
                        f"{ev['counts']['success']} 次，判定为用户手滑")

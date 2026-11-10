@@ -108,7 +108,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/events":
             since = int((query.get("since") or ["0"])[0])
             limit = int((query.get("limit") or ["200"])[0])
-            return self._json(svc.events(since, limit))
+            latest = (query.get("latest") or ["0"])[0] in ("1", "true")
+            return self._json(svc.events(since, limit, latest))
         if path == "/api/bans":
             return self._json(svc.bans())
         if path == "/api/audit/latest":

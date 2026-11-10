@@ -167,7 +167,8 @@ def nikto_scan(ctx: Ctx, asset_id: str, **_) -> dict:
         raise ToolError("nikto 只能用于 kind=http 的资产")
     _rate(ctx, f"nikto:{asset_id}")
     return _run(ctx, ["nikto", "-h", f"http://{a['ip']}:{a['port']}/",
-                      "-maxtime", "25s", "-nointeractive"], timeout=40)
+                      "-Tuning", "123b", "-maxtime", "12s", "-nointeractive"],
+                timeout=25)
 
 
 def whatweb_scan(ctx: Ctx, asset_id: str, **_) -> dict:
