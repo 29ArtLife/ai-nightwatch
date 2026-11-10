@@ -8,6 +8,9 @@ import time
 
 
 def ensure_file(path: str) -> None:
+    """已存在的日志只读即可；只有缺失时才尝试创建（应用自己的 JSONL）。"""
+    if os.path.exists(path):
+        return
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     open(path, "a", encoding="utf-8").close()
 

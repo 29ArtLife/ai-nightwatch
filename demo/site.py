@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import sqlite3
@@ -12,7 +13,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 LOGIN_HTML = """<!doctype html><meta charset=utf-8><title>星火报表</title>
 <style>body{font-family:system-ui;background:#0f172a;color:#e2e8f0;display:grid;
@@ -107,14 +108,25 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _client_ip(self) -> str:
+        """只有对端是回环（nginx）时才采信 XFF；nginx 用覆盖式设置，不追加。"""
+        peer = self.client_address[0]
+        if peer == "127.0.0.1":
+            xff = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+            try:
+                return str(ipaddress.ip_address(xff))
+            except ValueError:
+                pass
+        return peer
+
     def _record(self, status: int, path: str):
-        ip = self.client_address[0]
+        ip = self._client_ip()
         self.site.log(self.site.access, {"ts": ts(), "ip": ip, "method": self.command,
                                          "path": path, "status": status,
                                          "ua": self.headers.get("User-Agent", "")[:120]})
 
     def do_GET(self):
-        ip = self.client_address[0]
+        ip = self._client_ip()
         path = self.path.split("?")[0]
         if self.site.banned(ip):
             self._record(403, path)
@@ -125,11 +137,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/reports":
             self._record(200, path)
             return self._send(200, REPORT_HTML)
+        if path == "/lab/item":
+            val = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            ok = val == "1"
+            self._record(200 if ok else 400, path)
+            if not ok:
+                return self._send(400, '{"error":"invalid id"}', "application/json")
+            return self._send(200, '{"id":1,"name":"demo"}', "application/json")
+        if path == "/lab/echo":
+            val = (parse_qs(urlparse(self.path).query).get("q") or [""])[0][:200]
+            self._record(200, path)
+            return self._send(200, json.dumps({"q": val}, ensure_ascii=False),
+                              "application/json")
         self._record(404, path)
         return self._send(404, "<h1>404 Not Found</h1>")
 
     def do_POST(self):
-        ip = self.client_address[0]
+        ip = self._client_ip()
         path = self.path.split("?")[0]
         if self.site.banned(ip):
             self._record(403, path)
@@ -155,8 +179,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8081)
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=8082)
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--db", default="data/nightwatch.db")
     ap.add_argument("--logdir", default="logs")
     a = ap.parse_args()

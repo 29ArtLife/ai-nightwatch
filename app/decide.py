@@ -4,7 +4,7 @@ from __future__ import annotations
 
 def decide(sig: dict, cfg: dict, now_iso: str, *, whitelisted: bool,
            already_banned: bool, auto_enabled: bool) -> dict:
-    ttl = int(cfg["enforce"]["default_ttl_sec"])
+    ttl = int(sig.get("ttl_sec") or cfg["enforce"]["default_ttl_sec"])
     thresholds = sig.get("thresholds", {})
     ev = {
         "rule_id": sig["rule_id"],
@@ -35,6 +35,12 @@ def decide(sig: dict, cfg: dict, now_iso: str, *, whitelisted: bool,
 
     if already_banned:
         return verdict("observe", "ALREADY_BANNED", "该 IP 已在封禁期内，不重复处置")
+
+    reason = sig["rule_id"].split(".")[0]
+    if sig["rule_id"].startswith(("NET_", "WAF_", "HTTP_FLOOD")):
+        if not sig.get("auto", True):
+            return verdict("alert", reason, f"规则 {reason} 配置为仅告警")
+        return verdict("ban", reason, "", ttl)
 
     if sig["rule_id"] == "PATH_SCAN.v1":
         return verdict("ban", "PATH_SCAN",

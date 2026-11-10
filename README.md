@@ -3,32 +3,44 @@
 24 小时驻守中小网站与服务器的防御侧 AI Agent：**先验真、再处置、全程留痕**；
 配套上线前的漏洞验真体检（剔除扫描器误报）。
 
-- 监控台：`http://10.2.102.143:8080/?token=<见服务器 data/token.txt>`
-- 演示站：`http://10.2.102.143:8081`（账号 `demo / demo`）
+- 监控台：`http://172.20.10.12:8080/?token=<见服务器 data/token.txt>`
+  （换网络后 IP 会变；把新网段加进 `enforce.whitelist_ips` 与 `/etc/nightwatch/fw-allow`）
+- 演示站：`http://172.20.10.12:8081`（账号 `demo / demo`）
 - 部署：Ubuntu 24.04 / Python 3.12 / 运行时依赖只有 `packaging`
 - 数据：SQLite WAL + JSONL；裁决不使用任何大模型
 
 ## 架构
 
 ```
-日志 JSONL ──tail -F──> 单写线程 ──> 事件账本(SQLite, 哈希链)
-                          │              │
-                          ├─ 滑窗检测(6×10s) ──> 验真裁决(纯函数) ──> 封禁/观察/告警
-                          │                                        └─> SSE 推送监控台
-                          └─ 解析失败也入账（parse_error）
+数据包 → nftables(inet nightwatch) → nginx:8081 (limit_req + ModSecurity/CRS) → demo:8082
+              │                              │
+              │                              └─ nginx access JSON / modsec audit JSON
+              └─ Suricata 旁路 (lo/wlp1s0/any) → eve.json (仅 alert)
+
+上述 3 类日志 + 应用 JSONL ──tail -F──> 单写线程 ──> 事件账本(SQLite, 哈希链)
+                                          │              │
+                                          ├─ 滑窗检测 ──> 验真裁决(纯函数) ──> 应用层 403 + nftables 丢包
+                                          │                                        └─> SSE 推送监控台
+                                          └─ 解析失败也入账（parse_error）
 体检管线：扫描器清单 → OSV 按 CVE 反查 → 别名并查集 → 版本范围 → 作用域 → import 可达性
 资产验真：内置 SSH 探测（banner + KEXINIT）→ banner 单独证据一律“存疑”
 AI 调查员：用户提问 → 模型选工具 → 工具层白名单执行 → 结果回填 → 带引用结论
              （只读 + 建议；裁决与处置仍由确定性引擎/人工完成）
 ```
 
+三层防线：Suricata 只告警；ModSecurity 阻断并出审计；nginx limit_req 限速；
+nftables 只按 IP 丢包。所有处置决策仍只经过 `app/decide.py` 一个纯函数。
+
 进程（systemd，均以 `li` 运行，端口 >1024）：
 
 | 服务 | 端口 | 作用 |
 |---|---|---|
 | `nightwatch` | 8080 | 采集/检测/裁决/API/SSE/监控台 |
-| `nightwatch-demo` | 8081 | 被守护的演示站（被封 IP 返回 403） |
+| `nginx` | 8081 | WAF 反向代理（limit_req + ModSecurity/CRS）→ 8082 |
+| `nightwatch-demo` | 8082 | 被守护的演示站（仅监听回环，被封 IP 返回 403） |
 | `nightwatch-fakessh` | 2222 | 假 banner 资产（自称 OpenSSH 7.4，无握手） |
+| `suricata` | — | 旁路 IDS，告警写 `/var/log/suricata/eve.json` |
+| `nftables` | — | `inet nightwatch` 表，`nw_block` 集合带 timeout |
 
 ## 3 分钟演示
 
@@ -46,6 +58,56 @@ cd ~/nightwatch
 
 监控台：实时事件流（每条的原始日志行与哈希可展开）→ 封禁名单倒计时/一键解封 →
 「未处置」区解释**为什么没封** → 体检页运行漏洞验真 → 资产页探测 → 日报页校验哈希链。
+
+## 网络防线（Suricata + WAF + nftables）
+
+### 检测与处置
+
+| 来源 | 内部规则 | 阈值 / TTL | 自动封 |
+|---|---|---|---|
+| Suricata ET SCAN / Nmap / Nikto | `NET_SCAN.v1` | 60s ≥3 条 / 1800s | 是 |
+| Suricata ET DOS / flood | `NET_DOS.v1` | 10s ≥50 条 / 600s | 是 |
+| Suricata ET EXPLOIT / Web Attack | `NET_EXPLOIT.v1` | 单条 / 3600s | 是 |
+| Suricata ET TROJAN / MALWARE | `NET_C2.v1` | 单条 / 3600s | 是 |
+| ModSecurity CRS 913/930/932/941/942 | `WAF_SCANNER/LFI/RCE/XSS/SQLI` | 单条 / 1800–3600s | 是 |
+| ModSecurity 920/921 协议异常 | `WAF_PROTOCOL.v1` | 仅告警 | 否 |
+| nginx limit_req 429 | `HTTP_FLOOD.v1` | 60s ≥60 个 429 / 300s | 是 |
+| 其它 Suricata 类别 | `NET_ALERT.v1` | 仅记录 | 否 |
+
+### 安全设计
+
+- `nw-fw` 是 li 通过 sudo 能触发的唯一命令；sudoers 只授权固定子命令，IP/TTL 在 root
+  wrapper 内校验，拒绝环回/保留/白名单地址。
+- nft 链顺序：`established → @nw_allow → tcp dport 22 accept → @nw_block drop`；
+  **没有 policy drop**，22 端口永远不会被本产品封禁。
+- 白名单真相在 root 拥有的 `/etc/nightwatch/fw-allow`，不读应用配置。
+- kill switch：监控台「网络防线」页可清空内核封禁；`sudo /usr/local/sbin/nw-fw panic`
+  只删本产品表；`POST /api/control {"auto_response": false}` 停用自动处置。
+- 每次封禁/解封/到期/清空都写哈希链；启动时按账本 `reconcile` 回放 nft 集合。
+- 应用层 403 中间件保留，作为 nft 后端失败时的兜底；nft 正常时攻击者直接连接超时。
+
+### 安装（Ubuntu 24.04）
+
+```bash
+sudo apt-get install -y suricata nginx libnginx-mod-http-modsecurity modsecurity-crs \
+  nftables logrotate apache2-utils nmap nikto hydra sqlmap hping3 tcpdump
+sudo python3 scripts/patch_suricata.py          # HOME_NET/接口/仅 alert 输出
+# 规则：ET Open 的 emerging-scan.rules / emerging-dos.rules + deploy/suricata/local.rules
+sudo install -m 644 deploy/suricata/local.rules /var/lib/suricata/rules/local.rules
+sudo suricata -T -c /etc/suricata/suricata.yaml
+sudo systemctl enable --now suricata
+bash scripts/deploy.sh
+```
+
+红队自测网：`sudo bash scripts/lab_netns.sh up` 创建 `nw-attacker`（10.200.0.2），
+**无默认路由**；所有主动工具应经 `scripts/lab_run.sh` 只打 10.200.0.1/127.0.0.1。
+`bash scripts/redteam.sh` 会跑 9 个用例并生成
+`data/reports/redteam-matrix.md`（T1 端口扫描、T2 Web 扫描、T3 爆破、T4 SQLi、
+T5 XSS、T6 SYN Flood、T7 HTTP Flood、T8 封禁中 SSH 仍可达、T9 回滚清空）。
+
+抓包配置说明：本机无线网卡的 AF_PACKET ring 初始化失败，因此 `wlp1s0` 用 pcap、
+`nw-kali0` 用 AF_PACKET；`lo` 不进入 IDS（Web 层由 nginx/WAF 日志覆盖）。
+`scripts/patch_suricata.py` 可重复执行，负责这套差异。
 
 ## AI 调查员（大模型驱动）
 
@@ -83,7 +145,7 @@ sudo systemctl restart nightwatch
 ## 测试
 
 ```bash
-.venv/bin/python -m pytest -q          # 25 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent
+.venv/bin/python -m pytest -q          # 40 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent/网络规则
 .venv/bin/python scripts/selftest.py   # 10 条端到端（需服务已启动）
 ```
 

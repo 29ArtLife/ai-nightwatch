@@ -150,6 +150,24 @@ class Store:
     def events_since(self, since: int = 0, limit: int = 500) -> list[dict]:
         return self._rows("SELECT * FROM events WHERE id>? ORDER BY id LIMIT ?", (since, limit))
 
+    def query_events(self, ip: str = "", kind: str = "", rule_prefix: str = "",
+                     limit: int = 50) -> list[dict]:
+        """SQL 过滤，供 AI 调查员使用（避免把整库拉进内存）。"""
+        sql = "SELECT * FROM events WHERE 1=1"
+        args: list = []
+        if ip:
+            sql += " AND ip=?"
+            args.append(ip)
+        if kind:
+            sql += " AND kind=?"
+            args.append(kind)
+        if rule_prefix:
+            sql += " AND COALESCE(rule_id,'') LIKE ?"
+            args.append(rule_prefix + "%")
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 200)))
+        return list(reversed(self._rows(sql, args)))
+
     def recent_events(self, limit: int = 50) -> list[dict]:
         rows = self._rows("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))
         return list(reversed(rows))

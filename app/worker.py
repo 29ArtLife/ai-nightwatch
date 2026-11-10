@@ -10,6 +10,7 @@ from .config import ip_allowed, whitelist_nets
 from .decide import decide
 from .detect import Detector
 from .enforce import Enforcer
+from .fw import FwBackend
 from .ingest import TailSource
 from .parsers import PARSERS, ParseError, now_ts
 from .store import now_iso
@@ -23,11 +24,12 @@ class Worker:
         self.q: queue.Queue = queue.Queue(maxsize=20000)
         self.stop_event = threading.Event()
         self.detector = Detector(cfg)
-        self.enforcer = Enforcer(store, cfg, publish=self.publish)
+        self.enforcer = Enforcer(store, cfg, publish=self.publish, fw=FwBackend(cfg))
         self.whitelist, self.bad_whitelist = whitelist_nets(cfg)
         self.auto_enabled = bool(cfg["mode"]["auto_response"])
         self.parse_errors = 0
         self._err_events: dict[str, float] = {}
+        self._alert_dedup: dict[tuple, float] = {}
         self.sources: list[TailSource] = []
         self._threads: list[threading.Thread] = []
 
@@ -96,12 +98,27 @@ class Worker:
         ev.source_offset = offset
         sig = self.detector.feed(ev)
         counts = self.detector.last_counts.get(ev.ip, {})
-        row = self.store.append_event(
-            ev.ts, ev.kind, ev.ip,
-            {"user": ev.user, "path": ev.path, "status": ev.status, "ua": ev.ua,
-             "window_counts": counts},
-            raw_line=ev.raw_line, source_file=source_file, source_offset=offset)
-        self.publish(row)
+        evidence = {**(ev.extra or {}),
+                    "user": ev.user, "path": ev.path, "status": ev.status, "ua": ev.ua,
+                    "window_counts": counts}
+        # 同类告警 10 秒内只落一条原始事件（仍先喂检测器，计数不受影响）
+        skip = False
+        if ev.kind in ("net_alert", "waf_alert", "http_429"):
+            key = (ev.ip, ev.kind,
+                   (ev.extra or {}).get("signature") or (ev.extra or {}).get("rule_id")
+                   or ev.path)
+            now = time.time()
+            if now - self._alert_dedup.get(key, 0) < 10:
+                skip = True
+            else:
+                if len(self._alert_dedup) > 5000:
+                    self._alert_dedup.clear()
+                self._alert_dedup[key] = now
+        if not skip:
+            row = self.store.append_event(
+                ev.ts, ev.kind, ev.ip, evidence,
+                raw_line=ev.raw_line, source_file=source_file, source_offset=offset)
+            self.publish(row)
         if not sig:
             return
         verdict = decide(

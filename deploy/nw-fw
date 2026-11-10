@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# root-only nftables wrapper. 唯一允许 li 通过 sudo 触发的防火墙入口。
+# 所有参数在这里校验；sudoers 只授权本脚本的固定子命令。
+set -euo pipefail
+PATH=/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+NFT_FILE=${NW_FW_NFT_FILE:-/etc/nftables.d/nightwatch.nft}
+ALLOW_FILE=${NW_FW_ALLOW_FILE:-/etc/nightwatch/fw-allow}
+LOCAL_IP=${NW_FW_LOCAL_IP:-10.2.102.143}
+TABLE="inet nightwatch"
+SET="nw_block"
+DRY=${NW_FW_DRY:-0}
+
+die() { echo "nw-fw: $*" >&2; exit 2; }
+
+need_args() { local want=$1; shift; [[ $# -eq $want ]] || die "参数个数错误"; }
+
+valid_ip_shape() {
+    [[ $1 =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+    local IFS=. a b c d
+    read -r a b c d <<<"$1"
+    ((a <= 255 && b <= 255 && c <= 255 && d <= 255))
+}
+
+is_allowlisted() {
+    python3 - "$1" "$ALLOW_FILE" <<'PY'
+import ipaddress, sys
+ip = ipaddress.ip_address(sys.argv[1])
+for line in open(sys.argv[2], encoding="utf-8"):
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    try:
+        if ip in ipaddress.ip_network(line, strict=False):
+            sys.exit(0)
+    except ValueError:
+        pass
+sys.exit(1)
+PY
+}
+
+check_ip() {
+    local ip=$1
+    [[ $ip != -* ]] || die "参数不能以 - 开头"
+    valid_ip_shape "$ip" || die "非法 IPv4: $ip"
+    python3 - "$ip" <<'PY' || die "拒绝该地址（保留/环回/组播/本机）"
+import ipaddress, sys
+ip = ipaddress.ip_address(sys.argv[1])
+if (ip.is_loopback or ip.is_unspecified or ip.is_multicast or
+        ip.is_link_local or ip.is_reserved):
+    sys.exit(1)
+PY
+    [[ $ip != "$LOCAL_IP" ]] || die "拒绝封禁本机地址"
+    if [[ -f $ALLOW_FILE ]] && is_allowlisted "$ip"; then
+        die "拒绝封禁白名单地址"
+    fi
+}
+
+check_ttl() {
+    [[ $1 =~ ^[0-9]+$ ]] || die "TTL 必须是整数"
+    (( $1 >= 60 && $1 <= 86400 )) || die "TTL 必须在 60..86400"
+}
+
+run() {
+    if [[ $DRY == 1 ]]; then echo "DRY: $*"; else "$@"; fi
+}
+
+cmd_init() {
+    need_args 0 "$@"
+    if nft list table inet nightwatch >/dev/null 2>&1; then
+        echo "already initialized"
+        return
+    fi
+    run nft -f "$NFT_FILE"
+    echo "initialized"
+}
+
+cmd_ban() {
+    need_args 2 "$@"
+    check_ip "$1"; check_ttl "$2"
+    run nft add element $TABLE $SET "{ $1 timeout ${2}s }"
+    echo "banned $1 ttl=$2"
+}
+
+cmd_unban() {
+    need_args 1 "$@"
+    check_ip "$1"
+    run nft delete element $TABLE $SET "{ $1 }" 2>/dev/null || true
+    echo "unbanned $1"
+}
+
+cmd_status() {
+    need_args 0 "$@"
+    nft -j list set $TABLE $SET
+}
+
+cmd_flush() {
+    need_args 0 "$@"
+    run nft flush set $TABLE $SET
+    echo "flushed"
+}
+
+cmd_panic() {
+    need_args 0 "$@"
+    run nft delete table inet nightwatch 2>/dev/null || true
+    echo "panicked: table removed"
+}
+
+cmd_reconcile() {
+    need_args 0 "$@"
+    local ip ttl
+    while read -r ip ttl; do
+        [[ -z $ip ]] && continue
+        check_ip "$ip"; check_ttl "$ttl"
+        run nft add element $TABLE $SET "{ $ip timeout ${ttl}s }"
+    done
+    echo "reconciled"
+}
+
+cmd_selftest() {
+    local rc=0
+    for bad in 127.0.0.1 0.0.0.0 224.0.0.1 10.2.102.143 169.254.1.1; do
+        if ( check_ip "$bad" ) >/dev/null 2>&1; then
+            echo "FAIL accepted $bad"; rc=1
+        else
+            echo "ok rejected $bad"
+        fi
+    done
+    if ( check_ip 8.8.8.8 ) >/dev/null 2>&1; then echo "ok allowed 8.8.8.8"; else echo "FAIL rejected 8.8.8.8"; rc=1; fi
+    for badttl in 59 86401 abc; do
+        if ( check_ttl "$badttl" ) >/dev/null 2>&1; then echo "FAIL ttl $badttl"; rc=1; else echo "ok rejected ttl $badttl"; fi
+    done
+    if ( check_ttl 600 ) >/dev/null 2>&1; then echo "ok ttl 600"; else echo "FAIL rejected ttl 600"; rc=1; fi
+    [[ $rc == 0 ]] && echo "SELFTEST OK" || echo "SELFTEST FAILED"
+    return $rc
+}
+
+case ${1:-} in
+    init) shift; cmd_init "$@" ;;
+    ban) shift; cmd_ban "$@" ;;
+    unban) shift; cmd_unban "$@" ;;
+    status) shift; cmd_status ;;
+    flush) shift; cmd_flush "$@" ;;
+    panic) shift; cmd_panic "$@" ;;
+    reconcile) shift; cmd_reconcile "$@" ;;
+    selftest) shift; cmd_selftest "$@" ;;
+    *) die "用法: nw-fw {init|ban <ip> <ttl>|unban <ip>|status [--json]|flush|panic|reconcile|selftest}" ;;
+esac

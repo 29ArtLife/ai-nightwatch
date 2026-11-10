@@ -21,6 +21,7 @@
     <button class="tab active" data-tab="patrol">巡逻</button>
     <button class="tab" data-tab="audit">体检</button>
     <button class="tab" data-tab="assets">资产</button>
+    <button class="tab" data-tab="network">网络防线</button>
     <button class="tab" data-tab="agent">AI 调查</button>
     <button class="tab" data-tab="report">日报 · 留痕</button>
   </nav>
@@ -57,6 +58,29 @@
       <span class="hint">仅白名单；banner 证据一律降级核验</span>
     </div>
     <div id="assets" class="assets"></div>
+  </section>
+
+  <section id="tab-network" class="tabpane">
+    <div class="toolbar">
+      <button id="net-refresh" class="primary">刷新</button>
+      <button id="net-flush" class="danger">清空内核封禁</button>
+      <button id="net-reconcile">按账本对账</button>
+      <span class="hint">Suricata 旁路 + nginx WAF + nftables；22 端口始终放行</span>
+    </div>
+    <div id="net-summary" class="summary"></div>
+    <div class="cols">
+      <div class="panel">
+        <h2>网络 / WAF 告警 <span class="hint" id="net-count"></span></h2>
+        <div id="net-alerts" class="stream" style="height:52vh"></div>
+      </div>
+      <div class="panel">
+        <h2>nftables 活跃封禁 <span class="hint">带内核 TTL</span></h2>
+        <div id="net-nft" class="bans"></div>
+        <h2 style="margin-top:18px">说明</h2>
+        <p class="hint">Suricata 只检测不处置；裁决仍由确定性引擎完成，命中后写 nftables set，
+        到期由内核自动移除，账本同步记录。清空只清封禁集，不动规则表。</p>
+      </div>
+    </div>
   </section>
 
   <section id="tab-agent" class="tabpane">

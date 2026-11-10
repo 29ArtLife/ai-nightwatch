@@ -12,7 +12,11 @@ import urllib.error
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PASS, FAIL = [], []
+PASS, FAIL, SKIP = [], [], []
+
+
+class Skip(Exception):
+    pass
 
 
 def check(name, fn):
@@ -20,6 +24,9 @@ def check(name, fn):
         fn()
         PASS.append(name)
         print(f"PASS {name}", flush=True)
+    except Skip as e:
+        SKIP.append(name)
+        print(f"SKIP {name}: {e}", flush=True)
     except Exception as e:
         FAIL.append((name, str(e)))
         print(f"FAIL {name}: {e}", flush=True)
@@ -121,19 +128,83 @@ def main():
         s, b = http(a.dash + "/api/report", token=token)
         assert "证据完整性" in b and "校验通过" in b
 
-    def rollback_scan():
-        http(a.dash + "/api/bans/127.0.0.12/rollback", "POST",
-             {"operator": "selftest", "reason": "清理"}, token)
+    def sources_online():
+        s, b = http(a.dash + "/api/status", token=token)
+        d = json.loads(b)
+        names = {x["name"]: x["online"] for x in d["sources"]}
+        assert names.get("suricata") and names.get("waf") and names.get("nginx"), names
 
-    for name, fn in [("health", health), ("normal-user-not-banned", normal_not_banned),
+    def fw_status():
+        s, b = http(a.dash + "/api/fw/status", token=token)
+        d = json.loads(b)
+        assert d.get("ok") and "entries" in d, d
+
+    def nft_roundtrip():
+        r = subprocess.run(["sudo", "-n", "/usr/local/sbin/nw-fw", "ban",
+                            "10.255.255.1", "120"], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise Skip(f"nw-fw 不可用: {r.stderr.strip()[:120]}")
+        try:
+            s, b = http(a.dash + "/api/fw/status", token=token)
+            assert any(e.get("ip") == "10.255.255.1" for e in json.loads(b)["entries"])
+        finally:
+            subprocess.run(["sudo", "-n", "/usr/local/sbin/nw-fw", "unban",
+                            "10.255.255.1"], capture_output=True)
+
+    def waf_blocks():
+        p = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "--interface", "127.0.0.8", "--max-time", "6",
+             "http://127.0.0.1:8081/lab/item?id=1%20OR%201=1"],
+            capture_output=True, text=True)
+        assert p.stdout.strip() == "403", p.stdout + p.stderr
+
+    def kill_switch():
+        http(a.dash + "/api/bans/127.0.0.7/rollback", "POST",
+             {"operator": "selftest", "reason": "清理"}, token)
+        http(a.dash + "/api/control", "POST", {"auto_response": False}, token)
+        try:
+            sim("brute", "--src", "127.0.0.7", "--n", "5", "--interval", "0.2")
+            time.sleep(1)
+            s, b = http(a.dash + "/api/bans", token=token)
+            assert all(x["ip"] != "127.0.0.7" for x in json.loads(b)), "自动处置已暂停但仍封禁"
+        finally:
+            http(a.dash + "/api/control", "POST", {"auto_response": True}, token)
+
+    def net_scan():
+        if not os.path.exists("/run/netns/nw-attacker"):
+            raise Skip("netns 未建立")
+        p = subprocess.run(
+            ["sudo", "-n", "ip", "netns", "exec", "nw-attacker",
+             "nmap", "-sS", "-Pn", "-p", "1-200", "--min-rate", "50",
+             "--max-retries", "1", "10.200.0.1"],
+            capture_output=True, text=True, timeout=60)
+        if p.returncode != 0:
+            raise Skip(f"nmap 失败: {p.stderr[:120]}")
+        time.sleep(2.5)
+        s, b = http(a.dash + "/api/bans", token=token)
+        assert any(x["ip"] == "10.200.0.2" for x in json.loads(b)), b
+
+    def cleanup():
+        for ip in ("127.0.0.2", "127.0.0.7", "127.0.0.8", "127.0.0.12",
+                   "10.200.0.2", "10.255.255.1"):
+            http(a.dash + f"/api/bans/{ip}/rollback", "POST",
+                 {"operator": "selftest", "reason": "清理"}, token)
+        subprocess.run(["sudo", "-n", "/usr/local/sbin/nw-fw", "unban",
+                        "10.255.255.1"], capture_output=True)
+
+    for name, fn in [("health", health), ("sources-online", sources_online),
+                     ("fw-status-ok", fw_status), ("nft-ban-roundtrip", nft_roundtrip),
+                     ("normal-user-not-banned", normal_not_banned),
                      ("brute-banned-at-5th", brute_banned), ("scan-banned", scan_banned),
                      ("rollback-restores", rollback), ("audit-12-5-5-1-1", audit_counts),
                      ("asset-fake-suspected", assets), ("chain-verify-ok", chain),
                      ("no-unauthorized-target", no_unauthorized),
-                     ("report-generated", report_ok)]:
+                     ("waf-blocks-sqli", waf_blocks), ("kill-switch", kill_switch),
+                     ("net-scan-banned", net_scan), ("report-generated", report_ok)]:
         check(name, fn)
-    rollback_scan()
-    print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
+    cleanup()
+    print(f"\n{len(PASS)} passed, {len(SKIP)} skipped, {len(FAIL)} failed")
     return 0 if not FAIL else 1
 
 

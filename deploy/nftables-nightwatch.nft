@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# 只做“按 IP 丢包”的专用表；policy accept，未命中流量自然放行，避免自锁。
+table inet nightwatch {
+    set nw_block {
+        type ipv4_addr
+        flags timeout
+        size 65536
+    }
+    set nw_allow {
+        type ipv4_addr
+        flags interval
+        elements = { 127.0.0.1, 10.2.102.143, 172.20.10.0/28 }
+    }
+    chain input {
+        type filter hook input priority -10; policy accept;
+        ct state established,related accept
+        ip saddr @nw_allow accept
+        tcp dport 22 accept
+        ip saddr @nw_block drop
+    }
+}

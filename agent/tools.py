@@ -98,14 +98,10 @@ def guard_status(ctx: Ctx, **_) -> dict:
     }
 
 
-def query_events(ctx: Ctx, ip: str = "", kind: str = "", limit: int = 20, **_) -> dict:
+def query_events(ctx: Ctx, ip: str = "", kind: str = "", rule_prefix: str = "",
+                 limit: int = 20, **_) -> dict:
     limit = max(1, min(int(limit), 50))
-    rows = ctx.store.events_since(0, 100000)
-    if ip:
-        rows = [r for r in rows if r["ip"] == ip]
-    if kind:
-        rows = [r for r in rows if r["kind"] == kind]
-    rows = rows[-limit:]
+    rows = ctx.store.query_events(ip=ip, kind=kind, rule_prefix=rule_prefix, limit=limit)
     return {"count": len(rows), "events": [{
         "id": r["id"], "ts": r["ts"], "ip": r["ip"], "kind": r["kind"],
         "rule_id": r["rule_id"],
@@ -214,12 +210,34 @@ def list_pending(ctx: Ctx, **_) -> dict:
     return {"actions": list(ctx.service.pending.values())}
 
 
+def firewall_status(ctx: Ctx, **_) -> dict:
+    st = ctx.service.fw_status()
+    bans = ctx.store.active_bans()
+    return {"backend": "nftables", "status": st,
+            "ledger_bans": [{"ip": b["ip"], "reason": b["reason"],
+                             "until": b["until_ts"]} for b in bans]}
+
+
+def attack_chain(ctx: Ctx, ip: str, limit: int = 30, **_) -> dict:
+    """把某个 IP 的网络/WAF/应用层事件串成一条链。"""
+    rows = ctx.store.query_events(ip=ip, limit=max(1, min(int(limit), 100)))
+    return {"ip": ip, "count": len(rows), "events": [{
+        "id": r["id"], "ts": r["ts"], "kind": r["kind"], "rule_id": r["rule_id"],
+        "action": r["evidence"].get("action"),
+        "reason_code": r["evidence"].get("reason_code"),
+        "signature": r["evidence"].get("signature"),
+        "crs_rule": r["evidence"].get("crs_rule"),
+        "path": r["evidence"].get("path"),
+    } for r in rows]}
+
+
 IMPL = {
     "guard_status": guard_status, "query_events": query_events, "get_event": get_event,
     "verify_chain": verify_chain, "audit_dependencies": audit_dependencies,
     "probe_asset": probe_asset, "nmap_scan": nmap_scan, "nikto_scan": nikto_scan,
     "whatweb_scan": whatweb_scan, "host_audit": host_audit,
     "propose_ban": propose_ban, "list_pending": list_pending,
+    "firewall_status": firewall_status, "attack_chain": attack_chain,
 }
 
 
@@ -237,8 +255,11 @@ def build_specs(cfg: dict) -> list[dict]:
         _fn("query_events", "按 IP/类型查询事件账本（只读）", {
             "ip": {"type": "string", "description": "精确 IP，可留空"},
             "kind": {"type": "string", "enum": ["login_fail", "login_success", "http_404",
-                                                "http_request", "decision", "rollback",
-                                                "agent_tool", "agent_run", "parse_error"]},
+                                                "http_request", "http_429", "net_alert",
+                                                "waf_alert", "decision", "rollback",
+                                                "agent_tool", "agent_run", "parse_error",
+                                                "enforce_error"]},
+            "rule_prefix": {"type": "string", "description": "如 NET_ / WAF_ / BRUTE"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50},
         }),
         _fn("get_event", "取单条事件的完整证据与原始日志行", {
@@ -260,6 +281,11 @@ def build_specs(cfg: dict) -> list[dict]:
             "evidence_event_ids": {"type": "array", "items": {"type": "integer"}},
         }, ["ip", "reason", "evidence_event_ids"]),
         _fn("list_pending", "列出待人工确认的处置建议"),
+        _fn("firewall_status", "读取 nftables 活跃封禁与账本中的封禁"),
+        _fn("attack_chain", "把一个 IP 的网络/WAF/应用层事件串成攻击链", {
+            "ip": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+        }, ["ip"]),
     ]
 
 

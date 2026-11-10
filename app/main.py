@@ -17,7 +17,7 @@ sys.path.insert(0, ROOT)
 from app.api import Service  # noqa: E402
 from app.broker import Broker  # noqa: E402
 from app.config import load  # noqa: E402
-from app.store import Store  # noqa: E402
+from app.store import Store, now_iso  # noqa: E402
 from app.worker import Worker  # noqa: E402
 
 CT = {".html": "text/html; charset=utf-8", ".js": "application/javascript; charset=utf-8",
@@ -118,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(svc.assets())
         if path == "/api/chain/verify":
             return self._json(svc.chain())
+        if path == "/api/fw/status":
+            return self._json(svc.fw_status())
         if path == "/api/report":
             return self._text(svc.report())
         if path == "/api/agent/info":
@@ -192,6 +194,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"auto_response": self.service.set_auto(bool(body.get("auto_response", True)))})
             if path == "/api/audit/run":
                 return self._json(self.service.audit())
+            if path == "/api/fw/flush":
+                body = self._body()
+                return self._json(self.service.fw_flush(str(body.get("operator", "operator"))))
+            if path == "/api/fw/reconcile":
+                return self._json(self.service.fw_reconcile())
             if path == "/api/agent/chat":
                 body = self._body()
                 msg = str(body.get("message", "")).strip()
@@ -246,6 +253,11 @@ def main():
     broker = Broker()
     worker = Worker(cfg, store, publish=broker.publish)
     worker.start()
+    try:
+        rr = worker.enforcer.reconcile(now_iso())
+        print(f"fw reconcile: {len(rr)} entries {[x.get('ip') for x in rr]}", flush=True)
+    except Exception:
+        traceback.print_exc()
     Handler.service = Service(cfg, store, broker, worker)
     Handler.token = token
     Handler.webdir = os.path.join(ROOT, "web")

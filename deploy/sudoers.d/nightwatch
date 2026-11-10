@@ -1,0 +1,11 @@
+# 只允许 li 通过固定 wrapper 操作 nftables；参数合法性由 wrapper 校验。
+Cmnd_Alias NW_FW = /usr/local/sbin/nw-fw init, \
+                   /usr/local/sbin/nw-fw ban *, \
+                   /usr/local/sbin/nw-fw unban *, \
+                   /usr/local/sbin/nw-fw status, \
+                   /usr/local/sbin/nw-fw flush, \
+                   /usr/local/sbin/nw-fw panic, \
+                   /usr/local/sbin/nw-fw reconcile, \
+                   /usr/local/sbin/nw-fw selftest
+Defaults:li !requiretty
+li ALL=(root) NOPASSWD: NW_FW

@@ -49,15 +49,17 @@ async function refreshStatus() {
 /* ---------- 事件 ---------- */
 const KIND_LABEL = {
   login_fail: "登录失败", login_success: "登录成功",
-  http_404: "404 探测", http_request: "HTTP 请求",
+  http_404: "404 探测", http_request: "HTTP 请求", http_429: "限流 429",
+  net_alert: "网络告警", waf_alert: "WAF 告警",
   decision: "裁决", rollback: "人工回滚", parse_error: "解析错误",
+  firewall: "防火墙操作", enforce_error: "处置失败",
 };
 
 function ruleShort(r) {
   return (r || "").replace(".v1", "");
 }
 
-function renderEvent(row, prepend = false) {
+function renderEvent(row, prepend = false, target = null) {
   const ev = row.evidence || {};
   const action = ev.action || "";
   const cls = action === "ban" ? "ban" : action === "observe" || action === "no_action" ? "observe"
@@ -102,7 +104,7 @@ function renderEvent(row, prepend = false) {
   el.append(detail);
   el.addEventListener("click", () => el.classList.toggle("open"));
 
-  const stream = $("#stream");
+  const stream = target || $("#stream");
   if (!stream) return;
   if (prepend) stream.prepend(el); else stream.append(el);
   while (stream.children.length > 300) stream.lastChild.remove();
@@ -371,6 +373,85 @@ async function verifyChain() {
   $("#chain-result").style.color = v.ok ? "var(--green)" : "var(--red)";
 }
 
+/* ---------- 网络防线 ---------- */
+const NET_RULES = ["NET_", "WAF_", "HTTP_FLOOD"];
+
+async function loadNetwork() {
+  try {
+    const [fr, er] = await Promise.all([
+      api("/api/fw/status"),
+      api("/api/events?latest=1&limit=300"),
+    ]);
+    const fw = await fr.json();
+    const rows = await er.json();
+    const alerts = rows.filter((x) =>
+      ["net_alert", "waf_alert", "http_429"].includes(x.kind) ||
+      (x.kind === "decision" && NET_RULES.some((p) => String(x.evidence?.reason_code || "").startsWith(p))));
+    const net = alerts.filter((x) => x.kind === "net_alert").length;
+    const waf = alerts.filter((x) => x.kind === "waf_alert").length;
+    const box = $("#net-summary");
+    box.innerHTML = "";
+    for (const [label, value, cls] of [
+      ["网络告警", net, net ? "warn" : ""],
+      ["WAF 告警", waf, waf ? "bad" : ""],
+      ["内核封禁", fw.count || 0, fw.count ? "bad" : ""],
+      ["后端", fw.ok ? "正常" : "降级", fw.ok ? "good" : "bad"],
+    ]) {
+      const d = document.createElement("div");
+      d.className = "stat " + cls;
+      const b = document.createElement("b"); b.textContent = value;
+      const s = document.createElement("span"); s.textContent = label;
+      d.append(b, s); box.append(d);
+    }
+    const list = $("#net-alerts");
+    list.innerHTML = "";
+    alerts.slice(-120).forEach((x) => renderEvent(x, false, list));
+    $("#net-count").textContent = `最近 ${alerts.length} 条`;
+    const nft = $("#net-nft");
+    nft.innerHTML = "";
+    if (!fw.entries || !fw.entries.length) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = fw.ok ? "内核封禁集为空" : (fw.error || "后端不可用");
+      nft.append(e);
+    } else {
+      for (const en of fw.entries) {
+        const item = document.createElement("div");
+        item.className = "ban-item";
+        const g = document.createElement("div"); g.className = "grow";
+        const ip = document.createElement("div"); ip.className = "mono"; ip.textContent = en.ip;
+        const meta = document.createElement("div"); meta.className = "hint";
+        meta.textContent = `内核 TTL ${en.timeout ?? "?"}s · 剩余 ${en.expires ?? "?"}s`;
+        g.append(ip, meta);
+        const btn = document.createElement("button"); btn.className = "danger";
+        btn.textContent = "解除";
+        btn.addEventListener("click", async () => {
+          const operator = prompt("操作人", "demo") || "demo";
+          await api(`/api/bans/${encodeURIComponent(en.ip)}/rollback`, {
+            method: "POST", body: JSON.stringify({ operator, reason: "网络页手动解除" }),
+          });
+          loadNetwork(); refreshBans(); refreshStatus();
+        });
+        item.append(g, btn);
+        nft.append(item);
+      }
+    }
+  } catch (_) { /* ignore */ }
+}
+
+async function flushFw() {
+  if (!confirm("清空 nftables 封禁集？应用层封禁记录仍保留在账本中。")) return;
+  const operator = prompt("操作人", "demo") || "demo";
+  await api("/api/fw/flush", { method: "POST", body: JSON.stringify({ operator }) });
+  loadNetwork(); refreshBans(); refreshStatus();
+}
+
+async function reconcileFw() {
+  const r = await api("/api/fw/reconcile", { method: "POST", body: "{}" });
+  const d = await r.json();
+  alert(`对账完成：${d.count} 条，${d.ok ? "全部成功" : "存在失败"}`);
+  loadNetwork();
+}
+
 /* ---------- AI 调查员 ---------- */
 let AGENT_INFO = null;
 let AGENT_HISTORY = [];
@@ -515,6 +596,7 @@ document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () 
   if (t.dataset.tab === "audit") loadAudit();
   if (t.dataset.tab === "report") runReport();
   if (t.dataset.tab === "agent") { loadAgentInfo(); loadAgentActions(); }
+  if (t.dataset.tab === "network") loadNetwork();
 }));
 
 $("#run-audit").addEventListener("click", runAudit);
@@ -534,6 +616,13 @@ document.querySelectorAll(".quick button").forEach((b) => b.addEventListener("cl
   $("#agent-msg").value = q;
   sendAgent(q);
 }));
+$("#net-refresh").addEventListener("click", loadNetwork);
+$("#net-flush").addEventListener("click", flushFw);
+$("#net-reconcile").addEventListener("click", reconcileFw);
+setInterval(() => {
+  if ($("#tab-network").classList.contains("active")) loadNetwork();
+}, 4000);
+
 loadAgentInfo();
 setInterval(loadAgentActions, 10000);
 

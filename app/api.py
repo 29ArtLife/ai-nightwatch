@@ -61,6 +61,24 @@ class Service:
     def report(self) -> str:
         return build_report(self.store, self.cfg)
 
+    def fw_status(self) -> dict:
+        return self.worker.enforcer.fw_status()
+
+    def fw_flush(self, operator: str) -> dict:
+        res = self.worker.enforcer.fw.flush()
+        row = self.store.append_event(
+            now_iso(), "firewall", "0.0.0.0",
+            {"action": "flush", "operator": operator or "operator",
+             "ok": bool(res.get("ok")), "error": res.get("error")})
+        self.broker.publish(row)
+        return {"ok": bool(res.get("ok")), "event_id": row["id"],
+                "output": res.get("output") or res.get("error")}
+
+    def fw_reconcile(self) -> dict:
+        res = self.worker.enforcer.reconcile(now_iso())
+        return {"ok": all(x.get("ok") for x in res), "count": len(res),
+                "results": res}
+
     def set_auto(self, enabled: bool) -> bool:
         self.worker.auto_enabled = bool(enabled)
         return self.worker.auto_enabled

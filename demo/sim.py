@@ -7,7 +7,8 @@ import sys
 import time
 from urllib.parse import urlencode
 
-ALLOWED_SRC = {"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.12"}
+ALLOWED_SRC = {"127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.7",
+               "127.0.0.8", "127.0.0.12"}
 ALLOWED_TARGETS = {"127.0.0.1", "10.2.102.143"}
 ALLOWED_PORTS = {8081}
 

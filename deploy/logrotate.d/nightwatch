@@ -1,0 +1,33 @@
+/var/log/suricata/eve.json {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su root adm
+    create 0640 root adm
+}
+
+/var/log/nginx/modsec_audit.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su www-data adm
+    create 0640 www-data adm
+}
+
+/var/log/nginx/nw_access.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    create 0640 www-data adm
+    postrotate
+        [ -f /run/nginx.pid ] && kill -USR1 "$(cat /run/nginx.pid)" || true
+    endscript
+}

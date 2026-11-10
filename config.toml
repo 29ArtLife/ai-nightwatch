@@ -19,6 +19,18 @@ parser = "jsonl_http"
 name = "app_auth"
 path = "logs/app_auth.jsonl"
 parser = "jsonl_auth"
+[[ingest.sources]]
+name = "suricata"
+path = "/var/log/suricata/eve.json"
+parser = "suricata_eve"
+[[ingest.sources]]
+name = "waf"
+path = "/var/log/nginx/modsec_audit.log"
+parser = "modsec_json"
+[[ingest.sources]]
+name = "nginx"
+path = "/var/log/nginx/nw_access.log"
+parser = "nginx_json"
 
 [detect.brute]
 window_sec = 60
@@ -32,8 +44,13 @@ sensitive_prefixes = [".env", ".git/config", "wp-login.php", "phpmyadmin", "admi
 
 [enforce]
 default_ttl_sec = 600
-whitelist_ips = ["127.0.0.1", "::1", "10.2.102.143"]
+whitelist_ips = ["127.0.0.1", "::1", "10.2.102.143", "172.20.10.0/28"]
 cooldown_sec = 30
+
+[fw]
+enabled = true
+wrapper = "/usr/local/sbin/nw-fw"
+timeout_sec = 5
 
 [osv]
 mode = "offline"          # offline | online
