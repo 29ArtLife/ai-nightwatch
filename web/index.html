@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 守夜人 · 监控台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span> AI 守夜人 <small>Nightwatch</small></div>
+  <div class="chips" id="chips">
+    <span class="chip" id="c-status">守护中</span>
+    <span class="chip" id="c-events">事件 0</span>
+    <span class="chip" id="c-bans">封禁 0</span>
+    <span class="chip" id="c-osv">OSV —</span>
+    <span class="chip" id="c-chain">链 —</span>
+    <label class="chip toggle"><input type="checkbox" id="auto" checked> 自动处置</label>
+  </div>
+  <nav>
+    <button class="tab active" data-tab="patrol">巡逻</button>
+    <button class="tab" data-tab="audit">体检</button>
+    <button class="tab" data-tab="assets">资产</button>
+    <button class="tab" data-tab="report">日报 · 留痕</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-patrol" class="tabpane active">
+    <div class="cols">
+      <div class="panel">
+        <h2>实时事件流 <span class="hint">落库后才推送</span></h2>
+        <div id="stream" class="stream"></div>
+      </div>
+      <div class="panel">
+        <h2>封禁名单</h2>
+        <div id="bans" class="bans"></div>
+        <h2 style="margin-top:18px">未处置（为什么没封）</h2>
+        <div id="observes" class="observes"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-audit" class="tabpane">
+    <div class="toolbar">
+      <button id="run-audit" class="primary">运行漏洞验真</button>
+      <span class="hint">外部扫描清单 → OSV 版本范围 → 作用域 → 可达性</span>
+    </div>
+    <div id="audit-summary" class="summary"></div>
+    <div id="findings" class="findings"></div>
+  </section>
+
+  <section id="tab-assets" class="tabpane">
+    <div class="toolbar">
+      <button id="run-assets" class="primary">探测授权资产</button>
+      <span class="hint">仅白名单；banner 证据一律降级核验</span>
+    </div>
+    <div id="assets" class="assets"></div>
+  </section>
+
+  <section id="tab-report" class="tabpane">
+    <div class="toolbar">
+      <button id="run-report" class="primary">生成值班日报</button>
+      <button id="verify-chain">校验证据链完整性</button>
+      <span id="chain-result" class="hint"></span>
+    </div>
+    <pre id="report" class="report"></pre>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

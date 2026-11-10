@@ -1,0 +1,59 @@
+[mode]
+demo = true
+auto_response = true
+
+[server]
+host = "0.0.0.0"
+port = 8080
+# 留空则启动时随机生成并写入 data/token.txt（前端首次访问需输入）
+token = ""
+trusted_proxies = ["127.0.0.1"]
+
+[ingest]
+# 演示站写入的 JSONL，由主进程 tail -F
+[[ingest.sources]]
+name = "app_access"
+path = "logs/app_access.jsonl"
+parser = "jsonl_http"
+[[ingest.sources]]
+name = "app_auth"
+path = "logs/app_auth.jsonl"
+parser = "jsonl_auth"
+
+[detect.brute]
+window_sec = 60
+fail_threshold = 5
+
+[detect.scan]
+window_sec = 60
+status_404_threshold = 8
+distinct_sensitive_paths = 5
+sensitive_prefixes = [".env", ".git/config", "wp-login.php", "phpmyadmin", "admin.php", ".aws", "backup", "actuator", "console", "config.json"]
+
+[enforce]
+default_ttl_sec = 600
+whitelist_ips = ["127.0.0.1", "::1", "10.2.102.143"]
+cooldown_sec = 30
+
+[osv]
+mode = "offline"          # offline | online
+snapshot_dir = "osv"
+api = "https://api.osv.dev"
+include_querybatch = false  # true 时额外把“当前版本确实受影响”的漏洞并入报告
+fail_on_unverified = true
+
+[asset]
+probe = "builtin"
+allowed_targets = ["127.0.0.1", "10.2.102.143"]
+assets = [
+  { id = "sshd", target = "127.0.0.1", port = 22, label = "本机 sshd" },
+  { id = "fake-ssh", target = "127.0.0.1", port = 2222, label = "演示假服务" },
+]
+timeout_sec = 2.0
+
+[reach]
+project_dir = "demo/demo_project"
+aliases_file = "demo/demo_project/module_aliases.json"
+
+[report]
+dir = "data/reports"

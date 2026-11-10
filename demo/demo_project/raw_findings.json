@@ -1,0 +1,14 @@
+[
+  {"pkg": "PyYAML", "version": "5.1", "cve": "CVE-2020-1747", "scanner": "粗筛工具", "claim": "PyYAML 反序列化 RCE"},
+  {"pkg": "requests", "version": "2.20.0", "cve": "CVE-2023-32681", "scanner": "粗筛工具", "claim": "Proxy-Authorization 泄露"},
+  {"pkg": "urllib3", "version": "1.26.4", "cve": "CVE-2021-33503", "scanner": "粗筛工具", "claim": "URL 解析 ReDoS"},
+  {"pkg": "Flask", "version": "2.0.0", "cve": "CVE-2023-30861", "scanner": "粗筛工具", "claim": "会话 Cookie 泄露"},
+  {"pkg": "Jinja2", "version": "3.0.0", "cve": "CVE-2024-22195", "scanner": "粗筛工具", "claim": "XML 属性注入 XSS"},
+  {"pkg": "Pillow", "version": "9.0.0", "cve": "CVE-2022-22817", "scanner": "粗筛工具", "claim": "ImageMath eval 代码执行"},
+  {"pkg": "Django", "version": "3.2.0", "cve": "CVE-2021-35042", "scanner": "粗筛工具", "claim": "QuerySet 注入"},
+  {"pkg": "requests", "version": "2.20.0", "cve": "CVE-2018-18074", "scanner": "粗筛工具", "claim": "凭据泄露（历史 CVE）"},
+  {"pkg": "PyYAML", "version": "5.1", "cve": "CVE-2017-18342", "scanner": "粗筛工具", "claim": "yaml.load 不安全（历史 CVE）"},
+  {"pkg": "Jinja2", "version": "3.0.0", "cve": "CVE-2019-10906", "scanner": "粗筛工具", "claim": "沙箱逃逸（历史 CVE）"},
+  {"pkg": "Pillow", "version": "9.0.0", "cve": "CVE-2016-9189", "scanner": "粗筛工具", "claim": "图像解析越界（历史 CVE）"},
+  {"pkg": "urllib3", "version": "1.26.4", "cve": "CVE-2019-11324", "scanner": "粗筛工具", "claim": "证书校验绕过（历史 CVE）"}
+]

@@ -1,0 +1,13 @@
+{
+  "PyYAML": "yaml",
+  "requests": "requests",
+  "urllib3": "urllib3",
+  "Flask": "flask",
+  "Jinja2": "jinja2",
+  "Pillow": "PIL",
+  "SQLAlchemy": "sqlalchemy",
+  "numpy": "numpy",
+  "python-dateutil": "dateutil",
+  "click": "click",
+  "Django": "django"
+}

@@ -1,0 +1,9 @@
+.venv/
+data/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tgz
+rsh.py
+sync.py

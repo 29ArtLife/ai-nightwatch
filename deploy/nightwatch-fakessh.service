@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Nightwatch - fake SSH banner asset
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=li
+Group=li
+WorkingDirectory=/home/li/nightwatch
+ExecStart=/home/li/nightwatch/.venv/bin/python demo/fake_ssh.py --port 2222
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

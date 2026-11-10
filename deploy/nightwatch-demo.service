@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Nightwatch - demo site
+After=network-online.target nightwatch.service
+Wants=network-online.target
+
+[Service]
+User=li
+Group=li
+WorkingDirectory=/home/li/nightwatch
+ExecStart=/home/li/nightwatch/.venv/bin/python demo/site.py --port 8081
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/li/nightwatch/logs
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
