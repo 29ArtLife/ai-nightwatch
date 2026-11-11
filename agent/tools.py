@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import secrets
 import shutil
@@ -86,13 +87,17 @@ def _run(ctx: Ctx, cmd: list[str], timeout: int | None = None) -> dict:
 def guard_status(ctx: Ctx, **_) -> dict:
     v = ctx.store.verify_chain()
     bans = ctx.store.active_bans()
+    sources = [{"name": s.source_name, "online": s.online} for s in ctx.worker.sources]
+    if not sources:  # CLI 一次性进程没有启动 tailer，用文件存在性代替
+        sources = [{"name": s["name"], "online": os.path.exists(s["path"])}
+                   for s in ctx.cfg.get("ingest", {}).get("sources", [])]
     return {
         "events": v.get("count", 0),
         "chain_ok": v.get("ok", False),
         "auto_response": ctx.worker.auto_enabled,
         "active_bans": [{"ip": b["ip"], "reason": b["reason"], "until": b["until_ts"]}
                         for b in bans],
-        "sources": [{"name": s.source_name, "online": s.online} for s in ctx.worker.sources],
+        "sources": sources,
         "assets": [{"id": a["id"], "kind": a.get("kind", "ssh"), "port": a["port"],
                     "label": a.get("label", a["id"])} for a in ctx.cfg["asset"]["assets"]],
     }
@@ -202,6 +207,8 @@ def propose_ban(ctx: Ctx, ip: str, reason: str, evidence_event_ids: list[int], *
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "status": "pending",
     }
+    if hasattr(ctx.service, "save_pending"):
+        ctx.service.save_pending()
     return {"recommendation_id": rid,
             "note": "仅为建议，必须在监控台由人工点击确认后才会执行封禁"}
 

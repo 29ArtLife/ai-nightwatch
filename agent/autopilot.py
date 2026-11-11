@@ -23,7 +23,7 @@ class Autopilot(threading.Thread):
         self.worker = worker
         self.service = service
         self.stop_event = threading.Event()
-        self.enabled = bool(a.get("autopilot", False))
+        self.enabled = self._flag_enabled()
         self.interval = max(30, int(a.get("autopilot_interval_sec", 120)))
         self.max_calls = int(a.get("autopilot_max_calls_per_hour", 20))
         self.max_alerts = int(a.get("autopilot_max_alerts", 8))
@@ -34,6 +34,13 @@ class Autopilot(threading.Thread):
         self.last_run = 0.0
         self.last_error = ""
         self.last_result = ""
+
+    def _flag_enabled(self) -> bool:
+        try:
+            with open(os.path.join("data", "autopilot.flag"), encoding="utf-8") as f:
+                return f.read().strip().lower() != "off"
+        except OSError:
+            return bool(self.cfg["agent"].get("autopilot", False))
 
     def status(self) -> dict:
         now = time.time()
@@ -124,6 +131,7 @@ class Autopilot(threading.Thread):
 
     def run(self):
         while not self.stop_event.is_set():
+            self.enabled = self._flag_enabled()
             try:
                 self.tick()
             except Exception as e:

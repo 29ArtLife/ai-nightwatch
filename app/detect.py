@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from .rules import map_crs, map_suricata
 
-BUCKET_SEC = 10
+BUCKET_SEC = 1  # 1 秒桶，避免 10 秒桶把窗口边界外的旧事件算进来
 
 
 class Detector:

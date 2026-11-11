@@ -1,17 +1,15 @@
-"""端到端自检：假设监控台与演示站已启动。只在 Linux 上运行。"""
+"""端到端自检：CLI 版，假设 daemon 与演示站已启动。只在 Linux 上运行。"""
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import platform
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLI = [sys.executable, "-m", "app.cli"]
 PASS, FAIL, SKIP = [], [], []
 
 
@@ -32,18 +30,17 @@ def check(name, fn):
         print(f"FAIL {name}: {e}", flush=True)
 
 
-def http(url, method="GET", data=None, token=None):
-    req = urllib.request.Request(url, method=method)
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-        req.data = json.dumps(data).encode()
+def run(*args):
+    return subprocess.run([*CLI, *args], cwd=ROOT, capture_output=True, text=True,
+                          timeout=120)
+
+
+def cj(*args):
+    p = run(*args)
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.status, r.read().decode()
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode()
+        return json.loads(p.stdout)
+    except json.JSONDecodeError:
+        raise AssertionError(f"CLI {' '.join(args)} 输出不是 JSON: {p.stdout[:200]} {p.stderr[:200]}")
 
 
 def sim(*args, expect=None):
@@ -55,88 +52,22 @@ def sim(*args, expect=None):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--dash", default="http://127.0.0.1:8080")
-    ap.add_argument("--site", default="http://127.0.0.1:8081")
-    ap.add_argument("--token", default="")
-    a = ap.parse_args()
     if platform.system() != "Linux":
-        print("SKIP：selftest 依赖 Linux（tail -F / 源地址绑定 / 进程管理）")
+        print("SKIP：selftest 依赖 Linux")
         return 0
-    token = a.token
-    if not token:
-        try:
-            token = open(os.path.join(ROOT, "data/token.txt"), encoding="utf-8").read().strip()
-        except FileNotFoundError:
-            pass
     os.chdir(ROOT)
 
-    def health():
-        s, b = http(a.dash + "/api/health")
-        assert s == 200 and json.loads(b)["ok"]
-
-    def normal_not_banned():
-        sim("normal", "--src", "127.0.0.3", "--interval", "0.2")
-        time.sleep(1.5)
-        s, b = http(a.dash + "/api/bans", token=token)
-        assert all(x["ip"] != "127.0.0.3" for x in json.loads(b)), "正常用户被误封"
-
-    def brute_banned():
-        p = sim("brute", "--src", "127.0.0.2", "--n", "5", "--interval", "0.5")
-        lines = p.stdout.strip().splitlines()
-        assert lines[-1].endswith("403"), f"封禁后正确密码未被拦截: {lines[-1]}"
-        time.sleep(1.5)
-        s, b = http(a.dash + "/api/bans", token=token)
-        assert any(x["ip"] == "127.0.0.2" for x in json.loads(b))
-
-    def scan_banned():
-        sim("scan", "--src", "127.0.0.12", "--n", "10", "--interval", "0.15")
-        time.sleep(1.5)
-        s, b = http(a.dash + "/api/bans", token=token)
-        assert any(x["ip"] == "127.0.0.12" for x in json.loads(b))
-
-    def rollback():
-        s, b = http(a.dash + "/api/bans/127.0.0.2/rollback", "POST",
-                    {"operator": "selftest", "reason": "自检"}, token)
-        assert s == 200, b
-        time.sleep(0.3)
-        lines = sim("brute", "--src", "127.0.0.2", "--n", "1", "--interval", "0.1").stdout
-        assert "401" in lines, f"回滚后仍被封: {lines}"
-
-    def audit_counts():
-        s, b = http(a.dash + "/api/audit/run", "POST", {}, token)
-        d = json.loads(b)
-        sm = d["summary"]
-        assert (sm["total"], sm["confirmed"], sm["version_mismatch"],
-                sm["unreachable"], sm["dev_only"]) == (12, 5, 5, 1, 1), sm
-        assert sm["source_mode"] == "offline"
-
-    def assets():
-        s, b = http(a.dash + "/api/assets", token=token)
-        d = {x["id"]: x for x in json.loads(b)}
-        assert d["fake-ssh"]["state"] == "SUSPECTED" and d["fake-ssh"]["cve_linked"] == 0
-        assert d["sshd"]["state"] == "PROTOCOL_CONFIRMED"
-
-    def chain():
-        s, b = http(a.dash + "/api/chain/verify", token=token)
-        assert json.loads(b)["ok"]
-
-    def no_unauthorized():
-        sim("brute", "--src", "127.0.0.2", "--target", "8.8.8.8:80", expect=2)
-
-    def report_ok():
-        s, b = http(a.dash + "/api/report", token=token)
-        assert "证据完整性" in b and "校验通过" in b
+    def status():
+        d = cj("status", "--json")
+        assert d["chain_ok"] and d["events"] >= 0, d
 
     def sources_online():
-        s, b = http(a.dash + "/api/status", token=token)
-        d = json.loads(b)
-        names = {x["name"]: x["online"] for x in d["sources"]}
+        d = cj("status", "--json")
+        names = {s["name"]: s["online"] for s in d["sources"]}
         assert names.get("suricata") and names.get("waf") and names.get("nginx"), names
 
     def fw_status():
-        s, b = http(a.dash + "/api/fw/status", token=token)
-        d = json.loads(b)
+        d = cj("fw-status", "--json")
         assert d.get("ok") and "entries" in d, d
 
     def nft_roundtrip():
@@ -145,11 +76,58 @@ def main():
         if r.returncode != 0:
             raise Skip(f"nw-fw 不可用: {r.stderr.strip()[:120]}")
         try:
-            s, b = http(a.dash + "/api/fw/status", token=token)
-            assert any(e.get("ip") == "10.255.255.1" for e in json.loads(b)["entries"])
+            d = cj("fw-status", "--json")
+            assert any(e.get("ip") == "10.255.255.1" for e in d["entries"]), d
         finally:
             subprocess.run(["sudo", "-n", "/usr/local/sbin/nw-fw", "unban",
                             "10.255.255.1"], capture_output=True)
+
+    def normal_not_banned():
+        sim("normal", "--src", "127.0.0.3", "--interval", "0.2")
+        time.sleep(1.5)
+        bans = cj("bans", "--json")
+        assert all(x["ip"] != "127.0.0.3" for x in bans), "正常用户被误封"
+
+    def brute_banned():
+        p = sim("brute", "--src", "127.0.0.2", "--n", "5", "--interval", "0.5")
+        lines = p.stdout.strip().splitlines()
+        assert lines[-1].endswith("403"), f"封禁后正确密码未被拦截: {lines[-1]}"
+        time.sleep(1.5)
+        bans = cj("bans", "--json")
+        assert any(x["ip"] == "127.0.0.2" for x in bans)
+
+    def scan_banned():
+        sim("scan", "--src", "127.0.0.12", "--n", "10", "--interval", "0.15")
+        time.sleep(1.5)
+        bans = cj("bans", "--json")
+        assert any(x["ip"] == "127.0.0.12" for x in bans)
+
+    def rollback():
+        p = run("unban", "127.0.0.2")
+        assert p.returncode == 0, p.stdout + p.stderr
+        time.sleep(0.3)
+        lines = sim("brute", "--src", "127.0.0.2", "--n", "1",
+                    "--interval", "0.1").stdout
+        assert "401" in lines, f"回滚后仍被封: {lines}"
+
+    def audit_counts():
+        d = cj("audit", "--json")
+        sm = d["summary"]
+        assert (sm["total"], sm["confirmed"], sm["version_mismatch"],
+                sm["unreachable"], sm["dev_only"]) == (12, 5, 5, 1, 1), sm
+        assert sm["source_mode"] == "offline"
+
+    def assets():
+        rows = cj("probe", "--json")
+        d = {x["id"]: x for x in rows}
+        assert d["fake-ssh"]["state"] == "SUSPECTED" and d["fake-ssh"]["cve_linked"] == 0
+        assert d["sshd"]["state"] == "PROTOCOL_CONFIRMED"
+
+    def chain():
+        assert cj("chain", "--json")["ok"]
+
+    def no_unauthorized():
+        sim("brute", "--src", "127.0.0.2", "--target", "8.8.8.8:80", expect=2)
 
     def waf_blocks():
         p = subprocess.run(
@@ -158,18 +136,19 @@ def main():
              "http://127.0.0.1:8081/lab/item?id=1%20OR%201=1"],
             capture_output=True, text=True)
         assert p.stdout.strip() == "403", p.stdout + p.stderr
+        rows = cj("events", "--json", "--kind", "waf_alert", "--limit", "10")
+        assert any(r["ip"] == "127.0.0.8" for r in rows), rows
 
     def kill_switch():
-        http(a.dash + "/api/bans/127.0.0.7/rollback", "POST",
-             {"operator": "selftest", "reason": "清理"}, token)
-        http(a.dash + "/api/control", "POST", {"auto_response": False}, token)
+        run("unban", "127.0.0.7")
+        assert run("auto-response", "off").returncode == 0
         try:
             sim("brute", "--src", "127.0.0.7", "--n", "5", "--interval", "0.2")
             time.sleep(1)
-            s, b = http(a.dash + "/api/bans", token=token)
-            assert all(x["ip"] != "127.0.0.7" for x in json.loads(b)), "自动处置已暂停但仍封禁"
+            bans = cj("bans", "--json")
+            assert all(x["ip"] != "127.0.0.7" for x in bans), "自动处置已暂停但仍封禁"
         finally:
-            http(a.dash + "/api/control", "POST", {"auto_response": True}, token)
+            run("auto-response", "on")
 
     def net_scan():
         if not os.path.exists("/run/netns/nw-attacker"):
@@ -182,18 +161,22 @@ def main():
         if p.returncode != 0:
             raise Skip(f"nmap 失败: {p.stderr[:120]}")
         time.sleep(2.5)
-        s, b = http(a.dash + "/api/bans", token=token)
-        assert any(x["ip"] == "10.200.0.2" for x in json.loads(b)), b
+        bans = cj("bans", "--json")
+        assert any(x["ip"] == "10.200.0.2" for x in bans), bans
+
+    def report_ok():
+        p = run("report")
+        assert "证据完整性" in p.stdout and "校验通过" in p.stdout
 
     def cleanup():
         for ip in ("127.0.0.2", "127.0.0.7", "127.0.0.8", "127.0.0.12",
                    "10.200.0.2", "10.255.255.1"):
-            http(a.dash + f"/api/bans/{ip}/rollback", "POST",
-                 {"operator": "selftest", "reason": "清理"}, token)
+            run("unban", ip)
+        run("flush")
         subprocess.run(["sudo", "-n", "/usr/local/sbin/nw-fw", "unban",
                         "10.255.255.1"], capture_output=True)
 
-    for name, fn in [("health", health), ("sources-online", sources_online),
+    for name, fn in [("status", status), ("sources-online", sources_online),
                      ("fw-status-ok", fw_status), ("nft-ban-roundtrip", nft_roundtrip),
                      ("normal-user-not-banned", normal_not_banned),
                      ("brute-banned-at-5th", brute_banned), ("scan-banned", scan_banned),

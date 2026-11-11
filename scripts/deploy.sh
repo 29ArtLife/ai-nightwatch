@@ -69,6 +69,6 @@ sleep 2
 
 echo "[9/9] verify"
 systemctl is-active nightwatch nightwatch-demo nightwatch-fakessh || true
-ss -lntp | grep -E ':(8080|8081|8082|2222)\b' || true
-curl -s http://127.0.0.1:8080/api/health && echo
-echo "token: $(cat data/token.txt)"
+ss -lntp | grep -E ':(8081|8082|2222)\b' || true
+chmod +x nightwatch
+./nightwatch status --json

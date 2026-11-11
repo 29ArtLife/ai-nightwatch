@@ -2,9 +2,7 @@
 # 红队自测：每个用例只打实验网授权资产，产出攻击→检测→封禁→证据矩阵。
 set -uo pipefail
 cd "$(dirname "$0")/.."
-TOK=$(cat data/token.txt)
-A="Authorization: Bearer $TOK"
-DASH=http://127.0.0.1:8080
+CLI=./nightwatch
 OUT=data/reports
 mkdir -p "$OUT" data/wordlists
 printf 'wrong1\nwrong2\nwrong3\nwrong4\nwrong5\nwrong6\nwrong7\nwrong8\nwrong9\nwrong10\n' \
@@ -15,40 +13,26 @@ if ! ip netns list | grep -q '^nw-attacker'; then
 fi
 
 clear_bans() {
-  curl -s -H "$A" "$DASH/api/bans" | python3 -c "
-import json,sys,urllib.request
-tok='$TOK'; dash='$DASH'
+  "$CLI" bans --json 2>/dev/null | python3 -c "
+import json,sys,subprocess
 for b in json.load(sys.stdin):
-    req=urllib.request.Request(dash+'/api/bans/'+b['ip']+'/rollback', method='POST',
-        data=json.dumps({'operator':'redteam','reason':'reset'}).encode(),
-        headers={'Authorization':'Bearer '+tok,'Content-Type':'application/json'})
-    try: urllib.request.urlopen(req, timeout=5).read()
-    except Exception: pass
+    subprocess.run(['./nightwatch','unban',b['ip']],capture_output=True)
 " 2>/dev/null || true
-  curl -s -X POST -H "$A" -H "Content-Type: application/json" -d '{}' "$DASH/api/fw/flush" >/dev/null
+  "$CLI" flush >/dev/null 2>&1 || true
   sleep 0.5
 }
 
 base_id() {
-  curl -s -H "$A" "$DASH/api/events?latest=1&limit=1" \
+  "$CLI" events --json --limit 1 2>/dev/null \
     | python3 -c "import json,sys;d=json.load(sys.stdin);print(d[-1]['id'] if d else 0)" 2>/dev/null || echo 0
 }
 
 nft_ips() {
-  sudo -n /usr/local/sbin/nw-fw status 2>/dev/null | python3 -c "
+  "$CLI" fw-status --json 2>/dev/null | python3 -c "
 import json,sys
 try: d=json.load(sys.stdin)
 except Exception: sys.exit(0)
-ips=[]
-for x in d.get('nftables',[]):
-    s=x.get('set')
-    if not s: continue
-    for el in s.get('elem',[]) or []:
-        e=el.get('elem',el) if isinstance(el,dict) else el
-        if isinstance(e,dict):
-            if e.get('val'): ips.append(str(e['val']))
-        elif e: ips.append(str(e))
-print(','.join(ips))
+print(','.join(str(e.get('ip','')) for e in d.get('entries',[]) if e.get('ip')))
 "
 }
 
@@ -71,7 +55,7 @@ run_case() {
   timeout 90 bash scripts/lab_run.sh "$tool" >/tmp/red_$id.log 2>&1 || true
   sleep 2
   local ev
-  ev=$(curl -s -H "$A" "$DASH/api/events?since=$base&limit=200")
+  ev=$("$CLI" events --json --since "$base" --limit 200 2>/dev/null || echo '[]')
   local rule_txt act_txt id_txt
   rule_txt=$(echo "$ev" | python3 -c "
 import json,sys
@@ -99,7 +83,7 @@ print(','.join(str(r['id']) for r in d[-6:]) or '-')
   local nft hit ch
   nft=$(nft_ips)
   hit=$(echo "$nft" | grep -q '10.200.0.2' && echo yes || echo no)
-  ch=$(curl -s -H "$A" "$DASH/api/chain/verify" | python3 -c "import json,sys;print('ok' if json.load(sys.stdin).get('ok') else 'bad')" 2>/dev/null)
+  ch=$("$CLI" chain --json 2>/dev/null | python3 -c "import json,sys;print('ok' if json.load(sys.stdin).get('ok') else 'bad')" 2>/dev/null)
   echo "| $id | $name | $tool | 10.200.0.1 | $expected | $rule_txt | $act_txt | $id_txt | $hit | $ch |" >> "$md"
   json_items+=("{\"id\":\"$id\",\"name\":\"$name\",\"tool\":\"$tool\",\"expected\":\"$expected\",\"rules\":\"$rule_txt\",\"actions\":\"$act_txt\",\"events\":\"$id_txt\",\"nft_hit\":\"$hit\",\"chain\":\"$ch\"}")
   echo "  rules=$rule_txt | action=$act_txt | nft=$hit | chain=$ch"
@@ -125,8 +109,8 @@ echo "== T8 SSH == ssh_ok=$ssh_ok nft_hit=$nft_hit"
 # T9：回滚后 nft 清空
 clear_bans
 sleep 0.5
-after=$(curl -s -H "$A" "$DASH/api/fw/status" | python3 -c "import json,sys;print(json.load(sys.stdin).get('count',-1))" 2>/dev/null)
-echo "| T9 | 一键回滚 | api rollback+flush | - | nft 集合为空 | - | rollback | - | count=$after | - |" >> "$md"
+after=$("$CLI" fw-status --json 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('count',-1))" 2>/dev/null)
+echo "| T9 | 一键回滚 | cli unban+flush | - | nft 集合为空 | - | rollback | - | count=$after | - |" >> "$md"
 json_items+=("{\"id\":\"T9\",\"name\":\"rollback\",\"nft_count\":$after}")
 printf '[%s]\n' "$(IFS=,; echo "${json_items[*]}")" > "$json"
 echo "矩阵：$md"

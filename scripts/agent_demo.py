@@ -9,20 +9,18 @@ os.chdir(ROOT)
 
 from agent.runner import run_agent  # noqa: E402
 from agent.tools import Ctx  # noqa: E402
-from app.api import Service  # noqa: E402
-from app.broker import Broker  # noqa: E402
 from app.config import load  # noqa: E402
+from app.core import Core  # noqa: E402
 from app.store import Store, now_iso  # noqa: E402
 from app.worker import Worker  # noqa: E402
 
 question = " ".join(sys.argv[1:]) or "巡检本机：查看守卫状态和最近事件，给出结论。"
 cfg = load("config.toml")
 store = Store("data/nightwatch.db")
-broker = Broker()
-worker = Worker(cfg, store, broker.publish)
+worker = Worker(cfg, store)
 worker.enqueue_event = lambda kind, ip, ev: store.append_event(now_iso(), kind, ip, ev)
-svc = Service(cfg, store, broker, worker)
-ctx = Ctx(cfg=cfg, store=store, worker=worker, service=svc, pending=svc.pending)
+core = Core(cfg, store, worker)
+ctx = Ctx(cfg=cfg, store=store, worker=worker, service=core, pending=core.pending)
 r = run_agent(question, cfg, ctx)
 print("=" * 60)
 print("问题：", question)

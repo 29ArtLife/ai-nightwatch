@@ -2,13 +2,6 @@
 demo = true
 auto_response = true
 
-[server]
-host = "0.0.0.0"
-port = 8080
-# 留空则启动时随机生成并写入 data/token.txt（前端首次访问需输入）
-token = ""
-trusted_proxies = ["127.0.0.1"]
-
 [ingest]
 # 演示站写入的 JSONL，由主进程 tail -F
 [[ingest.sources]]

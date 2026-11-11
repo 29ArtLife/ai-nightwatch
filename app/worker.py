@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import time
@@ -26,12 +27,21 @@ class Worker:
         self.detector = Detector(cfg)
         self.enforcer = Enforcer(store, cfg, publish=self.publish, fw=FwBackend(cfg))
         self.whitelist, self.bad_whitelist = whitelist_nets(cfg)
-        self.auto_enabled = bool(cfg["mode"]["auto_response"])
+        self._auto_default = bool(cfg["mode"]["auto_response"])
         self.parse_errors = 0
         self._err_events: dict[str, float] = {}
         self._alert_dedup: dict[tuple, float] = {}
         self.sources: list[TailSource] = []
         self._threads: list[threading.Thread] = []
+
+    @property
+    def auto_enabled(self) -> bool:
+        """运行时开关由 data/auto_response.flag 控制，CLI 可直接切换。"""
+        try:
+            with open(os.path.join("data", "auto_response.flag"), encoding="utf-8") as f:
+                return f.read().strip().lower() != "off"
+        except OSError:
+            return self._auto_default
 
     def start(self):
         for src in self.cfg.get("ingest", {}).get("sources", []):
