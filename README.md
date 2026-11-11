@@ -13,6 +13,7 @@
 ```bash
 cd ~/nightwatch
 ./nightwatch status              # 运行状态
+./nightwatch watch               # 实时事件流（另开终端攻击）
 ./nightwatch events --limit 20   # 最近事件
 ./nightwatch bans                # 生效封禁
 ./nightwatch chain               # 校验哈希链
@@ -33,6 +34,7 @@ sudo journalctl -u nightwatch -f
 |---|---|
 | `daemon` | 常驻采集/检测/裁决/封禁 + AI 值守（systemd 使用） |
 | `status [--json]` | 守护状态、事件数、封禁数、采集源、链完整性、AI 状态 |
+| `watch [--ip] [--kind] [--rule] [--jsonl]` | **实时输出**新事件（攻击→检测→封禁） |
 | `events [--ip] [--kind] [--rule] [--since] [--limit] [--json]` | 查事件账本 |
 | `event <id> [--json]` | 单条事件的完整证据与哈希 |
 | `bans [--json]` | 生效封禁 |

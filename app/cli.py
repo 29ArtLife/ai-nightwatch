@@ -55,6 +55,64 @@ def _fmt_event(r: dict) -> str:
             f"{(r.get('rule_id') or '-'):<18} {str(desc)[:50]}")
 
 
+_COLORS = {
+    "ban": "\033[31;1m", "alert": "\033[33m", "observe": "\033[32m",
+    "no_action": "\033[32m", "rollback": "\033[34m", "expire": "\033[90m",
+    "net_alert": "\033[36m", "waf_alert": "\033[35m",
+    "agent_run": "\033[1;35m", "agent_tool": "\033[35m",
+    "firewall": "\033[33m", "enforce_error": "\033[31m",
+}
+_RESET = "\033[0m"
+
+
+def _watch_line(r: dict, color: bool, jsonl: bool) -> str:
+    if jsonl:
+        return json.dumps(r, ensure_ascii=False)
+    e = r.get("evidence") or {}
+    action = e.get("action") or ""
+    desc = (e.get("reason_code") or e.get("signature") or e.get("crs_message")
+            or e.get("observation") or e.get("message") or "")
+    if r["kind"] == "agent_tool":
+        desc = e.get("tool", "agent_tool")
+    if r["kind"] == "agent_run":
+        desc = f"source={e.get('source','chat')} steps={e.get('steps')}"
+    if r["kind"] == "decision" and action:
+        desc = f"{action}  {desc}"
+    line = (f"{r['ts'][11:19]}  #{r['id']:<6} {r['ip']:<15} "
+            f"{r['kind']:<12} {(r.get('rule_id') or '-'):<20} {str(desc)[:80]}")
+    if not color:
+        return line
+    c = _COLORS.get(action) or _COLORS.get(r["kind"]) or ""
+    return f"{c}{line}{_RESET}" if c else line
+
+
+def cmd_watch(args):
+    cfg, store, worker, core = _ctx()
+    last = args.since or (0 if args.from_start else store.max_event_id())
+    color = (not args.no_color) and sys.stdout.isatty()
+    st = core.status()
+    print(f"watching events since #{last} | daemon={'up' if st['daemon'] else 'down'} "
+          f"| bans={st['bans']} | chain={'ok' if st['chain_ok'] else 'BROKEN'} "
+          f"| Ctrl-C to stop", flush=True)
+    try:
+        while True:
+            rows = store.events_since(last, 200)
+            for r in rows:
+                last = max(last, r["id"])
+                if args.ip and r["ip"] != args.ip:
+                    continue
+                if args.kind and r["kind"] != args.kind:
+                    continue
+                if args.rule and not (r.get("rule_id") or "").startswith(args.rule):
+                    continue
+                if not args.all and r["kind"] in ("http_request", "parse_error"):
+                    continue
+                print(_watch_line(r, color, args.jsonl), flush=True)
+            time.sleep(max(0.2, args.interval))
+    except KeyboardInterrupt:
+        print("stopped", flush=True)
+
+
 def _check_ip(ip: str) -> str:
     try:
         a = ipaddress.ip_address(ip)
@@ -301,6 +359,18 @@ def main():
     p = sub.add_parser("status", help="运行状态")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)
+
+    p = sub.add_parser("watch", help="实时输出新事件（攻击→检测→封禁）")
+    p.add_argument("--ip", default="")
+    p.add_argument("--kind", default="")
+    p.add_argument("--rule", default="")
+    p.add_argument("--since", type=int, default=0)
+    p.add_argument("--from-start", action="store_true")
+    p.add_argument("--interval", type=float, default=0.5)
+    p.add_argument("--no-color", action="store_true")
+    p.add_argument("--jsonl", action="store_true")
+    p.add_argument("--all", action="store_true", help="包含 http_request/parse_error")
+    p.set_defaults(fn=cmd_watch)
 
     p = sub.add_parser("events", help="查询事件")
     p.add_argument("--limit", type=int, default=50)
