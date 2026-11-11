@@ -18,6 +18,7 @@ class Service:
         self.pending: dict[str, dict] = {}
         self.agent_autonomy = str(cfg.get("agent", {}).get("autonomy", "approve"))
         self._auto_ban_times: list[float] = []
+        self.autopilot = None
 
     def status(self) -> dict:
         v = self.store.verify_chain()
@@ -92,6 +93,7 @@ class Service:
             "enabled": bool(self.cfg.get("agent", {}).get("enabled")),
             "model": self.cfg.get("agent", {}).get("model"),
             "autonomy": self.agent_autonomy,
+            "autopilot": self.autopilot.status() if self.autopilot else {"enabled": False},
             "key_present": bool(os.environ.get("DEEPSEEK_API_KEY")),
             "assets": [{"id": a["id"], "kind": a.get("kind", "ssh"),
                         "label": a.get("label", a["id"])}
@@ -108,6 +110,16 @@ class Service:
             {"mode": mode, "operator": operator or "operator"})
         self.broker.publish(row)
         return mode
+
+    def agent_set_autopilot(self, enabled: bool, operator: str = "operator") -> dict:
+        if not self.autopilot:
+            return {"enabled": False, "error": "autopilot 未启动"}
+        self.autopilot.enabled = bool(enabled)
+        row = self.store.append_event(
+            now_iso(), "agent_autonomy", "0.0.0.0",
+            {"autopilot": bool(enabled), "operator": operator or "operator"})
+        self.broker.publish(row)
+        return self.autopilot.status()
 
     def agent_chat(self, message: str, history: list[dict] | None = None) -> dict:
         from agent.runner import run_agent

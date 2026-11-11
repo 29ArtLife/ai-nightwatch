@@ -84,6 +84,11 @@ scan_cooldown_sec = 60
 autonomy = "auto"
 auto_ban_ttl = 600
 max_auto_bans_per_min = 3
+# 7×24 值守：只在新告警出现时调用模型
+autopilot = true
+autopilot_interval_sec = 30
+autopilot_max_calls_per_hour = 20
+autopilot_max_alerts = 8
 
 [reach]
 project_dir = "demo/demo_project"

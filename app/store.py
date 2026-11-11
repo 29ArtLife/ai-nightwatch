@@ -150,6 +150,10 @@ class Store:
     def events_since(self, since: int = 0, limit: int = 500) -> list[dict]:
         return self._rows("SELECT * FROM events WHERE id>? ORDER BY id LIMIT ?", (since, limit))
 
+    def max_event_id(self) -> int:
+        row = self._read.execute("SELECT MAX(id) FROM events").fetchone()
+        return int(row[0] or 0)
+
     def query_events(self, ip: str = "", kind: str = "", rule_prefix: str = "",
                      limit: int = 50) -> list[dict]:
         """SQL 过滤，供 AI 调查员使用（避免把整库拉进内存）。"""

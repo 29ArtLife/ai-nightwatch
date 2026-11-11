@@ -161,10 +161,29 @@ max_auto_bans_per_min = 3
   每次封禁写入哈希链并记录 `actor=ai-agent` 与证据事件号。
 - 实测记录：`D:/AI/ku/docs/网安agent/AI自主封禁演示.md`（AI 自行调查后封禁 600 秒，决定事件 #632）。
 
+### 7×24 AI 值守
+
+```toml
+[agent]
+autopilot = true
+autopilot_interval_sec = 30
+autopilot_max_calls_per_hour = 20
+autopilot_max_alerts = 8
+```
+
+后台线程每 30 秒检查一次**新告警**；没有新告警就不调用模型（不空转、不烧 token）。
+有新告警时，把事件号/IP/签名交给 AI 复查，AI 可在 auto 模式下直接 `execute_ban`。
+
+- 已封禁的 IP 跳过；同一批告警只调用一次（按事件 id 哈希去重）。
+- 每小时最多 20 次模型调用；API 失败退避 5 分钟。
+- 值守状态在「AI 调查」页签可见（近 1 小时调用数、上次运行、错误），可一键关闭。
+- 实测：新探测告警 → 值守线程自动运行（RUN #707，工具 `get_event` + `execute_ban`）→
+  封禁 10.200.0.2 600 秒（决定 #705）。
+
 ## 测试
 
 ```bash
-.venv/bin/python -m pytest -q          # 44 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent/网络/自主处置
+.venv/bin/python -m pytest -q          # 47 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent/网络/自主处置/值守
 .venv/bin/python scripts/selftest.py   # 10 条端到端（需服务已启动）
 ```
 

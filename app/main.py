@@ -207,6 +207,10 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._json({"error": str(e)}, 400)
                 return self._json({"ok": True, "autonomy": mode})
+            if path == "/api/agent/autopilot":
+                body = self._body()
+                return self._json(self.service.agent_set_autopilot(
+                    bool(body.get("enabled")), str(body.get("operator", "operator"))))
             if path == "/api/agent/chat":
                 body = self._body()
                 msg = str(body.get("message", "")).strip()
@@ -266,7 +270,14 @@ def main():
         print(f"fw reconcile: {len(rr)} entries {[x.get('ip') for x in rr]}", flush=True)
     except Exception:
         traceback.print_exc()
-    Handler.service = Service(cfg, store, broker, worker)
+    service = Service(cfg, store, broker, worker)
+    if cfg.get("agent", {}).get("enabled"):
+        from agent.autopilot import Autopilot
+        ap = Autopilot(cfg, store, worker, service)
+        service.autopilot = ap
+        ap.start()
+        print(f"autopilot enabled={ap.enabled} interval={ap.interval}s", flush=True)
+    Handler.service = service
     Handler.token = token
     Handler.webdir = os.path.join(ROOT, "web")
     host, port = cfg["server"]["host"], int(cfg["server"]["port"])

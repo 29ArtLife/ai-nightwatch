@@ -505,6 +505,12 @@ async function loadAgentInfo() {
     $("#agent-model").textContent = `${AGENT_INFO.model} · ${AGENT_INFO.tools.length} 个工具 · ` +
       (AGENT_INFO.autonomy === "auto" ? "自主处置" : "人工确认");
     $("#agent-auto").checked = AGENT_INFO.autonomy === "auto";
+    const ap = AGENT_INFO.autopilot || {};
+    $("#agent-autopilot").checked = !!ap.enabled;
+    $("#agent-ap-status").textContent = ap.enabled
+      ? `值守中 · 每 ${ap.interval_sec}s 巡检 · 近 1 小时调用 ${ap.calls_last_hour}/${ap.max_calls_per_hour}` +
+        (ap.last_error ? ` · ${ap.last_error}` : "")
+      : "值守已关闭";
     if (!AGENT_INFO.enabled) $("#agent-status").textContent = "AI 调查已在配置中关闭；确定性守卫仍在运行。";
     else if (!AGENT_INFO.key_present) $("#agent-status").textContent = "未配置 DEEPSEEK_API_KEY，AI 调查不可用；确定性守卫仍在运行。";
     else $("#agent-status").textContent = "";
@@ -620,6 +626,12 @@ $("#agent-auto").addEventListener("change", async (e) => {
   });
   loadAgentInfo();
 });
+$("#agent-autopilot").addEventListener("change", async (e) => {
+  await api("/api/agent/autopilot", {
+    method: "POST", body: JSON.stringify({ enabled: e.target.checked, operator: "demo" }),
+  });
+  loadAgentInfo();
+});
 $("#agent-send").addEventListener("click", () => sendAgent($("#agent-msg").value));
 $("#agent-msg").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendAgent($("#agent-msg").value);
@@ -637,6 +649,7 @@ setInterval(() => {
 }, 4000);
 
 loadAgentInfo();
+setInterval(loadAgentInfo, 15000);
 setInterval(loadAgentActions, 10000);
 
 bootstrap();

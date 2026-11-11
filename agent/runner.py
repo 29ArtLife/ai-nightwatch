@@ -57,7 +57,8 @@ def _validate_citations(store, answer: str) -> list[int]:
     return sorted(bad)
 
 
-def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = None) -> dict:
+def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = None,
+              source: str = "chat") -> dict:
     if not cfg.get("agent", {}).get("enabled", False):
         return {"ok": False, "error": "AI 调查已在配置中关闭"}
     specs = build_specs(cfg)
@@ -112,7 +113,8 @@ def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = No
     except Exception as e:
         err = str(e)
         ctx.worker.enqueue_event("agent_run", "0.0.0.0", {
-            "message": message[:500], "error": err, "model": cfg["agent"].get("model")})
+            "message": message[:500], "error": err, "source": source,
+            "model": cfg["agent"].get("model")})
         return {"ok": False, "error": err, "trace": trace, "steps": steps}
 
     bad = _validate_citations(ctx.store, final)
@@ -122,7 +124,7 @@ def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = No
                    + ", ".join(f"#{i}" for i in bad))
         final += f"\n\n> ⚠️ 引用校验：{warning}"
     ctx.worker.enqueue_event("agent_run", "0.0.0.0", {
-        "message": message[:500], "answer": final[:3000],
+        "message": message[:500], "answer": final[:3000], "source": source,
         "model": cfg["agent"].get("model"), "steps": steps,
         "tools": [t["tool"] for t in trace],
         "citations_invalid": bad})
