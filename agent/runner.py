@@ -61,7 +61,8 @@ def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = No
     if not cfg.get("agent", {}).get("enabled", False):
         return {"ok": False, "error": "AI 调查已在配置中关闭"}
     specs = build_specs(cfg)
-    messages = [{"role": "system", "content": system_prompt(cfg)}]
+    messages = [{"role": "system", "content": system_prompt(
+        cfg, getattr(ctx.service, "agent_autonomy", "approve"))}]
     for h in history or []:
         if h.get("role") in ("user", "assistant") and h.get("content"):
             messages.append({"role": h["role"], "content": h["content"][:4000]})

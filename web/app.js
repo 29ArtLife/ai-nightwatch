@@ -502,7 +502,9 @@ async function loadAgentInfo() {
   try {
     const r = await api("/api/agent/info");
     AGENT_INFO = await r.json();
-    $("#agent-model").textContent = `${AGENT_INFO.model} · ${AGENT_INFO.tools.length} 个工具`;
+    $("#agent-model").textContent = `${AGENT_INFO.model} · ${AGENT_INFO.tools.length} 个工具 · ` +
+      (AGENT_INFO.autonomy === "auto" ? "自主处置" : "人工确认");
+    $("#agent-auto").checked = AGENT_INFO.autonomy === "auto";
     if (!AGENT_INFO.enabled) $("#agent-status").textContent = "AI 调查已在配置中关闭；确定性守卫仍在运行。";
     else if (!AGENT_INFO.key_present) $("#agent-status").textContent = "未配置 DEEPSEEK_API_KEY，AI 调查不可用；确定性守卫仍在运行。";
     else $("#agent-status").textContent = "";
@@ -606,6 +608,17 @@ $("#verify-chain").addEventListener("click", verifyChain);
 $("#auto").addEventListener("change", async (e) => {
   await api("/api/control", { method: "POST", body: JSON.stringify({ auto_response: e.target.checked }) });
   refreshStatus();
+});
+$("#agent-auto").addEventListener("change", async (e) => {
+  const mode = e.target.checked ? "auto" : "approve";
+  if (mode === "auto" && !confirm("开启后 AI 可直接封禁（白名单/管理机除外，可回滚）。确认？")) {
+    e.target.checked = false;
+    return;
+  }
+  await api("/api/agent/autonomy", {
+    method: "POST", body: JSON.stringify({ mode, operator: "demo" }),
+  });
+  loadAgentInfo();
 });
 $("#agent-send").addEventListener("click", () => sendAgent($("#agent-msg").value));
 $("#agent-msg").addEventListener("keydown", (e) => {

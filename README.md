@@ -122,6 +122,7 @@ T5 XSS、T6 SYN Flood、T7 HTTP Flood、T8 封禁中 SSH 仍可达、T9 回滚�
 | `nmap_scan(id)` / `nikto_scan(id)` / `whatweb_scan(id)` | 对**配置中的授权资产**做主动检查 |
 | `host_audit` | 本机只读巡检（监听端口/负载/内存/磁盘） |
 | `propose_ban(ip, reason, evidence_ids)` | 只生成待人工确认的封禁建议 |
+| `execute_ban(ip, reason, ttl, evidence_ids)` | **autonomy=auto 时直接封禁**（实验模式）；护栏见下 |
 
 安全边界（工具层强制，不依赖模型自觉）：
 - 扫描工具只接受 `asset_id`，host/port 从 `config.toml` 解析并二次校验 IP 白名单；
@@ -142,10 +143,28 @@ sudo systemctl restart nightwatch
 依赖工具（已安装）：`nmap`、`nikto`、`whatweb`。未配置密钥或断网时，AI 页签提示不可用，
 确定性守卫与全部演示照常运行。LYNIS 因单次 >90 秒，未接入交互链路。
 
+### 自主处置模式（实验）
+
+`config.toml`：
+
+```toml
+[agent]
+autonomy = "auto"          # auto | approve
+auto_ban_ttl = 600
+max_auto_bans_per_min = 3
+```
+
+- `auto`：AI 可在证据充分时直接调用 `execute_ban`；监控台「AI 调查」页签有开关，可随时切回 `approve`。
+- `approve`：AI 只能 `propose_ban`，人工批准后执行。
+- 护栏（工具层强制）：白名单/管理网段不可封；必须引用同 IP 的 `net_alert`/`waf_alert`/`decision`；
+  TTL 夹在 60–3600 秒；最多 3 次/分钟；全局自动处置关闭时禁止；AI 无解封/清空权限；
+  每次封禁写入哈希链并记录 `actor=ai-agent` 与证据事件号。
+- 实测记录：`D:/AI/ku/docs/网安agent/AI自主封禁演示.md`（AI 自行调查后封禁 600 秒，决定事件 #632）。
+
 ## 测试
 
 ```bash
-.venv/bin/python -m pytest -q          # 40 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent/网络规则
+.venv/bin/python -m pytest -q          # 44 个单测：链/并发/篡改/尾删/滑窗/裁决/范围/别名/Agent/网络/自主处置
 .venv/bin/python scripts/selftest.py   # 10 条端到端（需服务已启动）
 ```
 

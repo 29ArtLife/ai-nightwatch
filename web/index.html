@@ -87,6 +87,10 @@
     <div class="agent-wrap">
       <div class="panel">
         <h2>AI 安全调查员 <span class="hint" id="agent-model"></span></h2>
+        <div class="toolbar" style="margin:6px 0 10px">
+          <label class="chip toggle"><input type="checkbox" id="agent-auto"> AI 自主封禁（实验）</label>
+          <span class="hint">开启后 AI 可直接调用 execute_ban；白名单/管理机不可封，TTL ≤1h，可回滚</span>
+        </div>
         <div class="quick">
           <button data-q="巡检本机：查看守卫状态、监听端口、最近的处置事件">巡检本机</button>
           <button data-q="调查最近的封禁事件，解释证据并给出建议">调查最近封禁</button>

@@ -16,6 +16,8 @@ class Service:
         self.broker = broker
         self.worker = worker
         self.pending: dict[str, dict] = {}
+        self.agent_autonomy = str(cfg.get("agent", {}).get("autonomy", "approve"))
+        self._auto_ban_times: list[float] = []
 
     def status(self) -> dict:
         v = self.store.verify_chain()
@@ -89,12 +91,23 @@ class Service:
         return {
             "enabled": bool(self.cfg.get("agent", {}).get("enabled")),
             "model": self.cfg.get("agent", {}).get("model"),
+            "autonomy": self.agent_autonomy,
             "key_present": bool(os.environ.get("DEEPSEEK_API_KEY")),
             "assets": [{"id": a["id"], "kind": a.get("kind", "ssh"),
                         "label": a.get("label", a["id"])}
                        for a in self.cfg["asset"]["assets"]],
             "tools": [s["function"]["name"] for s in build_specs(self.cfg)],
         }
+
+    def agent_set_autonomy(self, mode: str, operator: str = "operator") -> str:
+        if mode not in ("auto", "approve"):
+            raise ValueError("mode 必须是 auto 或 approve")
+        self.agent_autonomy = mode
+        row = self.store.append_event(
+            now_iso(), "agent_autonomy", "0.0.0.0",
+            {"mode": mode, "operator": operator or "operator"})
+        self.broker.publish(row)
+        return mode
 
     def agent_chat(self, message: str, history: list[dict] | None = None) -> dict:
         from agent.runner import run_agent

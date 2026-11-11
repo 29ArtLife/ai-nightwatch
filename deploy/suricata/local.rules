@@ -1,3 +1,5 @@
 # 自写兜底规则：ET SCAN 未覆盖时，按 SYN 突发识别端口扫描
 alert tcp $EXTERNAL_NET any -> $HOME_NET !8081 (msg:"NW SCAN SYN burst >=50/10s"; flags:S; threshold: type threshold, track by_src, count 50, seconds 10; classtype:attempted-recon; sid:1000001; rev:2;)
 alert tcp $EXTERNAL_NET any -> $HOME_NET 8081 (msg:"NW SYN FLOOD 8081 >=200/10s"; flags:S; threshold: type threshold, track by_src, count 200, seconds 10; classtype:attempted-dos; sid:1000002; rev:1;)
+# 低置信探测：规则引擎只记 NET_ALERT，不自动封；用于演示 AI 自主处置
+alert tcp $EXTERNAL_NET any -> $HOME_NET 8081 (msg:"NW LAB INFO probe"; flags:S; threshold: type limit, track by_src, count 1, seconds 30; classtype:attempted-recon; sid:1000003; rev:1;)

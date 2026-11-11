@@ -210,6 +210,73 @@ def list_pending(ctx: Ctx, **_) -> dict:
     return {"actions": list(ctx.service.pending.values())}
 
 
+STRONG_EVIDENCE = {"net_alert", "waf_alert", "decision"}
+
+
+def execute_ban(ctx: Ctx, ip: str, reason: str, ttl: int = 600,
+                evidence_event_ids: list[int] | None = None, **_) -> dict:
+    """AI 自主封禁：仅在 autonomy=auto 时可用，护栏全部在此强制。"""
+    if getattr(ctx.service, "agent_autonomy", "approve") != "auto":
+        raise ToolError("AI 自主处置未开启（监控台 AI 页签可切换）")
+    if not getattr(ctx.worker, "auto_enabled", True):
+        raise ToolError("全局自动处置已暂停，AI 不得封禁")
+
+    try:
+        a = ipaddress.ip_address(str(ip))
+    except ValueError as e:
+        raise ToolError("ip 不是合法地址") from e
+    if a.version != 4 or a.is_unspecified or a.is_multicast or a.is_link_local or a.is_reserved:
+        raise ToolError("拒绝封禁保留/组播/链路本地地址")
+    ip_n = str(a)
+
+    from app.config import ip_allowed, whitelist_nets
+    nets, _ = whitelist_nets(ctx.cfg)
+    if ip_allowed(ip_n, nets):
+        raise ToolError("目标在白名单/管理网段，AI 不得封禁")
+
+    ids = [int(x) for x in (evidence_event_ids or [])]
+    if not ids:
+        raise ToolError("必须提供至少一个证据事件号")
+    strong = False
+    for eid in ids:
+        ev = ctx.store.event(eid)
+        if not ev:
+            raise ToolError(f"证据事件 #{eid} 不存在")
+        if ev["ip"] != ip_n:
+            raise ToolError(f"证据事件 #{eid} 的 IP 与目标不一致")
+        if ev["kind"] in STRONG_EVIDENCE:
+            strong = True
+    if not strong:
+        raise ToolError("证据不足：需要 net_alert / waf_alert / decision 事件")
+
+    ttl = max(60, min(3600, int(ttl or ctx.cfg["agent"].get("auto_ban_ttl", 600))))
+    now = time.time()
+    times = [t for t in getattr(ctx.service, "_auto_ban_times", []) if now - t < 60]
+    limit = int(ctx.cfg["agent"].get("max_auto_bans_per_min", 3))
+    if len(times) >= limit:
+        raise ToolError(f"AI 自动封禁频率超限（{limit}/分钟）")
+    if ctx.store.is_banned(ip_n):
+        return {"ok": True, "already_banned": True, "ip": ip_n}
+
+    from app.store import now_iso
+    ts = now_iso()
+    sig = {"ip": ip_n, "rule_id": "AI_AUTO_BAN.v1",
+           "window": {"start": ts, "end": ts, "sec": 0},
+           "counts": {}, "thresholds": {},
+           "sample_raw": [str(reason)[:300]], "ua": "ai-agent"}
+    verdict = {"action": "ban", "reason_code": "AI_AUTO_BAN", "ttl_sec": ttl,
+               "evidence": {"rule_id": "AI_AUTO_BAN.v1", "actor": "ai-agent",
+                            "autonomy": "auto", "reason": str(reason)[:300],
+                            "evidence_event_ids": ids, "counts": {},
+                            "negatives": []}}
+    row = ctx.worker.enforcer.handle(sig, verdict, ts)
+    times.append(now)
+    ctx.service._auto_ban_times = times
+    return {"ok": True, "event_id": row["id"], "ip": ip_n, "ttl": ttl,
+            "until": row.get("until_ts"),
+            "note": "已由 AI 直接执行封禁；人工可在监控台回滚"}
+
+
 def firewall_status(ctx: Ctx, **_) -> dict:
     st = ctx.service.fw_status()
     bans = ctx.store.active_bans()
@@ -238,6 +305,7 @@ IMPL = {
     "whatweb_scan": whatweb_scan, "host_audit": host_audit,
     "propose_ban": propose_ban, "list_pending": list_pending,
     "firewall_status": firewall_status, "attack_chain": attack_chain,
+    "execute_ban": execute_ban,
 }
 
 
@@ -286,6 +354,13 @@ def build_specs(cfg: dict) -> list[dict]:
             "ip": {"type": "string"},
             "limit": {"type": "integer", "minimum": 1, "maximum": 100},
         }, ["ip"]),
+        _fn("execute_ban",
+            "直接执行封禁（仅 autonomy=auto；必须引用同 IP 的强证据事件；TTL 60-3600）", {
+                "ip": {"type": "string"},
+                "reason": {"type": "string"},
+                "ttl": {"type": "integer", "minimum": 60, "maximum": 3600},
+                "evidence_event_ids": {"type": "array", "items": {"type": "integer"}},
+            }, ["ip", "reason", "evidence_event_ids"]),
     ]
 
 

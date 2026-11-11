@@ -61,11 +61,12 @@ fail_on_unverified = true
 
 [asset]
 probe = "builtin"
-allowed_targets = ["127.0.0.1", "10.2.102.143"]
+allowed_targets = ["127.0.0.1", "10.2.102.143", "10.200.0.1"]
 assets = [
   { id = "sshd", target = "127.0.0.1", port = 22, kind = "ssh", label = "本机 sshd" },
   { id = "fake-ssh", target = "127.0.0.1", port = 2222, kind = "ssh", label = "演示假服务" },
   { id = "demo-web", target = "127.0.0.1", port = 8081, kind = "http", label = "演示站" },
+  { id = "lab-host", target = "10.200.0.1", port = 8081, kind = "http", label = "实验网宿主" },
 ]
 timeout_sec = 2.0
 
@@ -79,6 +80,10 @@ tool_timeout_sec = 45
 max_output_bytes = 12000
 allow_active_scans = true
 scan_cooldown_sec = 60
+# auto = AI 可直接封禁；approve = 只能提交建议
+autonomy = "auto"
+auto_ban_ttl = 600
+max_auto_bans_per_min = 3
 
 [reach]
 project_dir = "demo/demo_project"

@@ -199,6 +199,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.service.fw_flush(str(body.get("operator", "operator"))))
             if path == "/api/fw/reconcile":
                 return self._json(self.service.fw_reconcile())
+            if path == "/api/agent/autonomy":
+                body = self._body()
+                try:
+                    mode = self.service.agent_set_autonomy(
+                        str(body.get("mode", "")), str(body.get("operator", "operator")))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json({"ok": True, "autonomy": mode})
             if path == "/api/agent/chat":
                 body = self._body()
                 msg = str(body.get("message", "")).strip()

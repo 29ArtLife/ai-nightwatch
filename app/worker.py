@@ -83,6 +83,9 @@ class Worker:
                 raise ParseError(f"unknown parser {parser_name}")
             ev = parser(line)
         except ParseError as e:
+            # nginx 日志只接 429，其余行静默丢弃，不算解析错误
+            if parser_name == "nginx_json" and "only rate-limit" in str(e):
+                return
             self.parse_errors += 1
             key = f"{source_name}:{str(e)[:40]}"
             last = self._err_events.get(key, 0)
