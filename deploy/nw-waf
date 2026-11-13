@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# AI 生成 WAF 规则的唯一 root 入口：只允许 UA 包含 / 路径前缀，最多 3 条。
+set -euo pipefail
+PATH=/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+FILE=/etc/nginx/modsec/ai-rules.conf
+MAX=3
+CONF=/etc/nginx/modsec/main.conf
+
+die() { echo "nw-waf: $*" >&2; exit 2; }
+
+validate() {
+    [[ $1 =~ ^[A-Za-z0-9._:/%+-]{2,64}$ ]] || die "非法值（仅允许字母数字 . _ : / % + -，2-64 字符）"
+}
+
+count_rules() {
+    local n
+    n=$(grep -c '^SecRule' "$FILE" 2>/dev/null || true)
+    echo "${n:-0}"
+}
+
+apply() {
+    local rule=$1
+    local n
+    n=$(count_rules)
+    (( n < MAX )) || die "规则数量已达上限 $MAX"
+    cp -a "$FILE" "$FILE.bak"
+    printf '%s\n' "$rule" >> "$FILE"
+    if ! nginx -t >/tmp/nw-waf-test.log 2>&1; then
+        cp -a "$FILE.bak" "$FILE"
+        die "nginx -t 失败，已回滚：$(tail -2 /tmp/nw-waf-test.log | tr '\n' ' ')"
+    fi
+    # ModSecurity 规则在 reload 下不生效，必须 restart worker
+    if ! systemctl restart nginx; then
+        cp -a "$FILE.bak" "$FILE"
+        systemctl restart nginx || true
+        die "nginx restart 失败，已回滚"
+    fi
+    echo "applied: $rule"
+}
+
+case ${1:-} in
+    add-ua)
+        [[ $# -eq 2 ]] || die "用法: nw-waf add-ua <substring>"
+        validate "$2"
+        n=$(count_rules); id=$((91000 + n + 1))
+        apply "SecRule REQUEST_HEADERS:User-Agent \"@contains $2\" \"id:$id,phase:1,deny,status:403,msg:'AI generated UA block'\""
+        ;;
+    add-path)
+        [[ $# -eq 2 ]] || die "用法: nw-waf add-path <prefix>"
+        validate "$2"
+        n=$(count_rules); id=$((91000 + n + 1))
+        apply "SecRule REQUEST_URI \"@beginsWith $2\" \"id:$id,phase:1,deny,status:403,msg:'AI generated path block'\""
+        ;;
+    list)
+        cat "$FILE" 2>/dev/null || true
+        ;;
+    clear)
+        : > "$FILE"
+        nginx -t >/dev/null 2>&1 && systemctl restart nginx || true
+        echo "cleared"
+        ;;
+    *)
+        die "用法: nw-waf {add-ua|add-path|list|clear} ..."
+        ;;
+esac

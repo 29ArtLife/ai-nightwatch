@@ -302,6 +302,24 @@ def cmd_probe(args):
         print(f"  {r.get('note','')}")
 
 
+def cmd_profile(args):
+    _, _, _, core = _ctx()
+    from app.profile import identify
+    rows = core.store.query_events(ip=args.ip, limit=200)
+    if not rows:
+        raise SystemExit(f"{args.ip} 没有事件")
+    r = identify(args.ip, rows)
+    if args.json:
+        return _json(r)
+    print(f"IP:          {r['ip']}")
+    print(f"工具:        {r['tool']}  置信度 {r['confidence']:.0%}")
+    print(f"事件:        {r['events']}  ({r['first_seen']} → {r['last_seen']})")
+    print(f"命中特征:    {', '.join(r['matched']) or '-'}")
+    print(f"规则:        {', '.join(r['rules']) or '-'}")
+    print(f"路径:        {', '.join(r['paths']) or '-'}")
+    print(f"说明:        {r['note']}")
+
+
 def cmd_ai(args):
     _, _, _, core = _ctx()
     info = core.agent_info()
@@ -451,6 +469,11 @@ def main():
     p.add_argument("asset", nargs="?")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_probe)
+
+    p = sub.add_parser("profile", help="攻击者画像（工具识别）")
+    p.add_argument("ip")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_profile)
 
     p = sub.add_parser("ai", help="AI 调查")
     p.add_argument("message", nargs="+")

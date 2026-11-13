@@ -37,7 +37,7 @@ def decide(sig: dict, cfg: dict, now_iso: str, *, whitelisted: bool,
         return verdict("observe", "ALREADY_BANNED", "该 IP 已在封禁期内，不重复处置")
 
     reason = sig["rule_id"].split(".")[0]
-    if sig["rule_id"].startswith(("NET_", "WAF_", "HTTP_FLOOD")):
+    if sig["rule_id"].startswith(("NET_", "WAF_", "HTTP_FLOOD", "HONEYPOT")):
         if not sig.get("auto", True):
             return verdict("alert", reason, f"规则 {reason} 配置为仅告警")
         return verdict("ban", reason, "", ttl)

@@ -18,6 +18,7 @@ if command -v nft >/dev/null; then
   sudo install -d -m 755 /etc/nftables.d /etc/nightwatch
   sudo install -m 644 deploy/nftables-nightwatch.nft /etc/nftables.d/nightwatch.nft
   sudo install -m 755 deploy/nw-fw /usr/local/sbin/nw-fw
+  sudo install -m 755 deploy/nw-waf /usr/local/sbin/nw-waf
   sudo install -m 644 deploy/fw-allow /etc/nightwatch/fw-allow
   sudo install -m 440 deploy/sudoers.d/nightwatch /etc/sudoers.d/nightwatch
   sudo visudo -c >/dev/null
@@ -33,6 +34,8 @@ if command -v nginx >/dev/null; then
   sudo install -d -m 755 /etc/nginx/modsec /var/lib/modsecurity/data /tmp/modsecurity
   sudo install -m 644 deploy/nginx/modsec/main.conf /etc/nginx/modsec/main.conf
   sudo install -m 644 deploy/nginx/modsec/crs-overrides.conf /etc/nginx/modsec/crs-overrides.conf
+  [ -f /etc/nginx/modsec/ai-rules.conf ] || \
+    sudo install -m 644 deploy/nginx/modsec/ai-rules.conf /etc/nginx/modsec/ai-rules.conf
   sudo touch /var/log/nginx/modsec_audit.log /var/log/nginx/nw_access.log
   sudo chown www-data:adm /var/log/nginx/modsec_audit.log /var/log/nginx/nw_access.log
   sudo chmod 640 /var/log/nginx/modsec_audit.log /var/log/nginx/nw_access.log

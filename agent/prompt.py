@@ -34,6 +34,7 @@ def system_prompt(cfg: dict, autonomy: str = "approve") -> str:
 - 先 guard_status / query_events 了解现状，再决定是否扫描；不要一上来就全量扫描。
 - 网络层告警看 kind=net_alert（签名/类别），Web 层看 kind=waf_alert（CRS rule id）。
 - 需要还原某个 IP 的攻击链时优先用 attack_chain，不要自己拼多条查询。
+- 需要判断攻击者用什么工具时用 profile_attacker；重复攻击者可用 escalate_ban。
 - 扫描结果要结合上下文解释（例如 banner 可能是伪造的，需要看握手）。
 - 处置建议最多 3 条；auto 模式下对高置信攻击直接 execute_ban，并在答案里给出决定事件号。
 

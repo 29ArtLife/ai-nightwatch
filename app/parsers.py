@@ -63,11 +63,14 @@ def parse_jsonl_http(line: str) -> ParsedEvent:
         if k not in d:
             raise ParseError(f"missing {k}")
     status = int(d.get("status", 200))
+    hp = d.get("honeypot")
+    kind = "honeypot" if hp else ("http_404" if status == 404 else "http_request")
     return ParsedEvent(
         ts=norm_ts(str(d["ts"])), ip=str(d["ip"]),
-        kind="http_404" if status == 404 else "http_request",
+        kind=kind,
         user=str(d.get("user", "")), path=str(d["path"]), status=status,
-        ua=str(d.get("ua", ""))[:200], raw_line=line)
+        ua=str(d.get("ua", ""))[:200], raw_line=line,
+        extra={"honeypot": str(hp)} if hp else {})
 
 
 def parse_jsonl_auth(line: str) -> ParsedEvent:

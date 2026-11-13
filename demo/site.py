@@ -37,6 +37,22 @@ padding:8px 14px;text-align:left}th{background:#1e293b}</style>
 <tr><td>华南</td><td>¥9,320,000</td><td>+11.6%</td></tr>
 <tr><td>华北</td><td>¥7,150,000</td><td>+6.4%</td></tr></table>"""
 
+HONEYPOT = {
+    "/admin": ("admin", """<!doctype html><meta charset=utf-8><title>Admin</title>
+<h1>后台登录</h1><form><input name=user placeholder=用户名>
+<input name=password type=password><button>登录</button></form>""", "text/html; charset=utf-8"),
+    "/.env": ("env", """APP_ENV=production
+DB_HOST=127.0.0.1
+DB_USER=demo
+DB_PASSWORD=FAKE_DO_NOT_USE
+AWS_ACCESS_KEY_ID=AKIAFAKEFAKEFAKE
+AWS_SECRET_ACCESS_KEY=FAKE/DO/NOT/USE
+""", "text/plain; charset=utf-8"),
+    "/wp-login.php": ("wordpress", """<!doctype html><meta charset=utf-8><title>WordPress</title>
+<h1>WordPress 登录</h1><form><input name=log><input name=pwd type=password>
+<button>登录</button></form>""", "text/html; charset=utf-8"),
+}
+
 BANNED_HTML = """<!doctype html><meta charset=utf-8><title>403</title>
 <style>body{font-family:system-ui;background:#1a0b0b;color:#fecaca;display:grid;
 place-items:center;height:100vh;margin:0;text-align:center}</style>
@@ -119,11 +135,14 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         return peer
 
-    def _record(self, status: int, path: str):
+    def _record(self, status: int, path: str, honeypot: str | None = None):
         ip = self._client_ip()
-        self.site.log(self.site.access, {"ts": ts(), "ip": ip, "method": self.command,
-                                         "path": path, "status": status,
-                                         "ua": self.headers.get("User-Agent", "")[:120]})
+        entry = {"ts": ts(), "ip": ip, "method": self.command,
+                 "path": path, "status": status,
+                 "ua": self.headers.get("User-Agent", "")[:120]}
+        if honeypot:
+            entry["honeypot"] = honeypot
+        self.site.log(self.site.access, entry)
 
     def do_GET(self):
         ip = self._client_ip()
@@ -137,6 +156,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/reports":
             self._record(200, path)
             return self._send(200, REPORT_HTML)
+        if path in HONEYPOT:
+            name, body, ctype = HONEYPOT[path]
+            self._record(200, path, honeypot=name)
+            return self._send(200, body, ctype)
         if path == "/lab/item":
             val = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
             ok = val == "1"

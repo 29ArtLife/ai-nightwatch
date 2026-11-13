@@ -40,7 +40,7 @@ class Detector:
         k = int(now.timestamp()) // BUCKET_SEC
         return st["b"].setdefault(k, {
             "f": 0, "s": 0, "p404": 0, "paths": set(), "users": set(),
-            "ids": 0, "waf": 0, "req": 0, "r429": 0,
+            "ids": 0, "waf": 0, "req": 0, "r429": 0, "hp": 0,
             "id_counts": {}, "waf_counts": {},
         })
 
@@ -51,7 +51,7 @@ class Detector:
 
     def _sum(self, st: dict, now: datetime, win: int) -> dict:
         cutoff = int(now.timestamp()) // BUCKET_SEC - win // BUCKET_SEC
-        f = s = p404 = ids = waf = req = r429 = 0
+        f = s = p404 = ids = waf = req = r429 = hp = 0
         paths, users = set(), set()
         id_counts: dict[str, int] = {}
         waf_counts: dict[str, int] = {}
@@ -60,6 +60,7 @@ class Detector:
                 continue
             f += b["f"]; s += b["s"]; p404 += b["p404"]
             ids += b["ids"]; waf += b["waf"]; req += b["req"]; r429 += b["r429"]
+            hp += b.get("hp", 0)
             paths |= b["paths"]; users |= b["users"]
             for r, n in b["id_counts"].items():
                 id_counts[r] = id_counts.get(r, 0) + n
@@ -67,7 +68,7 @@ class Detector:
                 waf_counts[r] = waf_counts.get(r, 0) + n
         return {"fails": f, "successes": s, "s404": p404,
                 "paths": sorted(paths), "users": sorted(users),
-                "ids": ids, "waf": waf, "req": req, "r429": r429,
+                "ids": ids, "waf": waf, "req": req, "r429": r429, "hp": hp,
                 "id_counts": id_counts, "waf_counts": waf_counts}
 
     def _emit(self, ip: str, kind: str, now: datetime, cool: int | None = None) -> bool:
@@ -107,6 +108,8 @@ class Detector:
             b["r429"] += 1
         elif ev.kind == "http_request":
             b["req"] += 1
+        elif ev.kind == "honeypot":
+            b["hp"] += 1
         elif ev.kind == "net_alert":
             m = map_suricata(str(extra.get("category", "")),
                              str(extra.get("signature", "")), extra.get("severity"))
@@ -151,6 +154,12 @@ class Detector:
                 return self._signal(ev, "BRUTE_FORCE.v1", now, brute, self.win_brute,
                                     {"fail_count": brute["fails"],
                                      "observation": "BELOW_THRESHOLD", "ttl_sec": 0})
+
+        # 蜜罐：命中即高置信，直接封
+        if ev.kind == "honeypot" and self._emit(ev.ip, "HONEYPOT", now):
+            s = self._sum(st, now, 60)
+            return self._signal(ev, "HONEYPOT.v1", now, s, 60, {
+                "honeypot": extra.get("honeypot", ""), "ttl_sec": 3600})
 
         # 网络层 / WAF
         if ev.kind == "net_alert":

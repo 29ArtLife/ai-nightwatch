@@ -292,6 +292,94 @@ def firewall_status(ctx: Ctx, **_) -> dict:
                              "until": b["until_ts"]} for b in bans]}
 
 
+def profile_attacker(ctx: Ctx, ip: str, limit: int = 200, **_) -> dict:
+    from app.profile import identify
+    rows = ctx.store.query_events(ip=ip, limit=min(int(limit), 200))
+    return identify(ip, rows)
+
+
+def escalate_ban(ctx: Ctx, ip: str, reason: str, ttl: int = 3600,
+                 evidence_event_ids: list[int] | None = None, **_) -> dict:
+    """对重复攻击者延长封禁；必须已有生效封禁且引用同 IP 强证据。"""
+    if getattr(ctx.service, "agent_autonomy", "approve") != "auto":
+        raise ToolError("AI 自主处置未开启")
+    if not getattr(ctx.worker, "auto_enabled", True):
+        raise ToolError("全局自动处置已暂停")
+    try:
+        ip_n = str(ipaddress.ip_address(ip))
+    except ValueError as e:
+        raise ToolError("ip 不是合法地址") from e
+    from app.config import ip_allowed, whitelist_nets
+    nets, _ = whitelist_nets(ctx.cfg)
+    if ip_allowed(ip_n, nets):
+        raise ToolError("目标在白名单/管理网段")
+    ids = [int(x) for x in (evidence_event_ids or [])]
+    if not ids:
+        raise ToolError("必须提供证据事件号")
+    strong = False
+    for eid in ids:
+        ev = ctx.store.event(eid)
+        if not ev or ev["ip"] != ip_n:
+            raise ToolError(f"证据 #{eid} 不存在或 IP 不一致")
+        if ev["kind"] in STRONG_EVIDENCE:
+            strong = True
+    if not strong:
+        raise ToolError("需要 net_alert / waf_alert / decision 证据")
+    cur = next((b for b in ctx.store.active_bans() if b["ip"] == ip_n), None)
+    if not cur:
+        raise ToolError("当前没有生效封禁；请用 execute_ban")
+    from app.store import now_iso
+    from datetime import datetime, timezone
+    until = datetime.fromisoformat(cur["until_ts"].replace("Z", "+00:00"))
+    remaining = max(0, int((until - datetime.now(timezone.utc)).total_seconds()))
+    ttl = max(int(ttl), remaining + 600)
+    ttl = max(3600, min(86400, ttl))
+    ts = now_iso()
+    sig = {"ip": ip_n, "rule_id": "AI_ESCALATE.v1",
+           "window": {"start": ts, "end": ts, "sec": 0},
+           "counts": {}, "thresholds": {}, "sample_raw": [str(reason)[:300]],
+           "ua": "ai-agent"}
+    verdict = {"action": "ban", "reason_code": "AI_ESCALATE", "ttl_sec": ttl,
+               "evidence": {"rule_id": "AI_ESCALATE.v1", "actor": "ai-agent",
+                            "reason": str(reason)[:300],
+                            "evidence_event_ids": ids, "counts": {},
+                            "negatives": []}}
+    row = ctx.worker.enforcer.handle(sig, verdict, ts)
+    return {"ok": True, "event_id": row["id"], "ip": ip_n, "ttl": ttl,
+            "until": row.get("until_ts"), "note": "已延长封禁"}
+
+
+def deploy_waf_rule(ctx: Ctx, match: str, value: str, note: str = "", **_) -> dict:
+    """AI 现场写一条模板化 WAF 规则（UA 包含 / 路径前缀），最多 3 条。"""
+    if getattr(ctx.service, "agent_autonomy", "approve") != "auto":
+        raise ToolError("AI 自主处置未开启")
+    if match not in ("ua", "path"):
+        raise ToolError("match 必须是 ua 或 path")
+    if not re.fullmatch(r"[A-Za-z0-9._:/%+\-]{2,64}", value or ""):
+        raise ToolError("value 仅允许字母数字 . _ : / % + -，2-64 字符")
+    sub = "add-ua" if match == "ua" else "add-path"
+    try:
+        p = subprocess.run(
+            ["sudo", "-n", "/usr/local/sbin/nw-waf", sub, value],
+            capture_output=True, text=True, timeout=25)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ToolError(f"nw-waf 调用失败: {e}") from e
+    ok = p.returncode == 0
+    from app.store import now_iso
+    row = ctx.store.append_event(
+        now_iso(), "firewall", "0.0.0.0",
+        {"action": "waf_rule", "match": match, "value": value,
+         "note": str(note)[:200], "ok": ok,
+         "output": ((p.stdout or "") + (p.stderr or ""))[-300:]})
+    pub = getattr(ctx.worker, "publish", None)
+    if pub:
+        pub(row)
+    if not ok:
+        raise ToolError(((p.stdout or "") + (p.stderr or ""))[-300:])
+    return {"ok": True, "match": match, "value": value,
+            "event_id": row["id"], "note": "WAF 规则已校验并 reload"}
+
+
 def attack_chain(ctx: Ctx, ip: str, limit: int = 30, **_) -> dict:
     """把某个 IP 的网络/WAF/应用层事件串成一条链。"""
     rows = ctx.store.query_events(ip=ip, limit=max(1, min(int(limit), 100)))
@@ -312,7 +400,8 @@ IMPL = {
     "whatweb_scan": whatweb_scan, "host_audit": host_audit,
     "propose_ban": propose_ban, "list_pending": list_pending,
     "firewall_status": firewall_status, "attack_chain": attack_chain,
-    "execute_ban": execute_ban,
+    "execute_ban": execute_ban, "escalate_ban": escalate_ban,
+    "profile_attacker": profile_attacker, "deploy_waf_rule": deploy_waf_rule,
 }
 
 
@@ -368,6 +457,22 @@ def build_specs(cfg: dict) -> list[dict]:
                 "ttl": {"type": "integer", "minimum": 60, "maximum": 3600},
                 "evidence_event_ids": {"type": "array", "items": {"type": "integer"}},
             }, ["ip", "reason", "evidence_event_ids"]),
+        _fn("escalate_ban",
+            "对已被封禁的重复攻击者延长封禁（TTL 1h-24h，需同 IP 证据）", {
+                "ip": {"type": "string"},
+                "reason": {"type": "string"},
+                "ttl": {"type": "integer", "minimum": 3600, "maximum": 86400},
+                "evidence_event_ids": {"type": "array", "items": {"type": "integer"}},
+            }, ["ip", "reason", "evidence_event_ids"]),
+        _fn("profile_attacker", "识别攻击者使用的工具（nmap/nikto/sqlmap/hydra 等）", {
+            "ip": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+        }, ["ip"]),
+        _fn("deploy_waf_rule", "现场生成并部署一条 WAF 规则（UA 包含/路径前缀，最多 3 条）", {
+            "match": {"type": "string", "enum": ["ua", "path"]},
+            "value": {"type": "string"},
+            "note": {"type": "string"},
+        }, ["match", "value"]),
     ]
 
 

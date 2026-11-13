@@ -47,6 +47,7 @@ sudo journalctl -u nightwatch -f
 | `report` | 值班日报（模板，不含大模型裁决） |
 | `audit [--json]` | 依赖漏洞验真（OSV 版本/作用域/可达性） |
 | `probe [asset] [--json]` | 资产探测（SSH banner+握手 / HTTP） |
+| `profile <ip> [--json]` | 攻击者画像（工具识别） |
 | `ai "<问题>" [--json]` | AI 调查；auto 模式下可直接封禁 |
 | `autonomy auto\|approve` | AI 能否直接封禁 |
 | `autopilot on\|off\|status` | 7×24 值守开关/状态 |
@@ -89,6 +90,7 @@ AI：只读工具 + 建议/执行封禁（autonomy=auto 且有护栏）；不在
 - ModSecurity CRS：913/930/932/941/942 等 → `WAF_SCANNER/LFI/RCE/XSS/SQLI`；
   审计日志是 `/var/log/nginx/modsec_audit.json`（故意避开 nginx 的 `*.log` 轮转）
 - nginx limit_req 429 → `HTTP_FLOOD`
+- 蜜罐 `/admin`、`/.env`、`/wp-login.php` → `HONEYPOT` 秒封 1 小时（零误报）
 - nftables `inet nightwatch`：`nw_block` 带 timeout；22 端口在 drop 之前放行；
   白名单在 `/etc/nightwatch/fw-allow`，li 只能通过 root wrapper `nw-fw` 操作。
 - 封禁/解封/到期/清空全部写哈希链；启动时按账本对账回放。
@@ -135,6 +137,10 @@ autopilot_max_calls_per_hour = 20
 - `autonomy=auto` 时，`execute_ban` 的护栏：白名单/管理网段不可封、必须引用同 IP 的
   `net_alert/waf_alert/decision`、TTL 60–3600、最多 3 次/分钟、全局自动处置关闭时禁止；
   AI 无解封/清空权限。所有 AI 封禁记录 `actor=ai-agent` 与证据事件号。
+- 其他工具：`escalate_ban`（重复攻击延长到 1h–24h）、`profile_attacker`（识别
+  nmap/nikto/sqlmap/hydra）、`deploy_waf_rule`（现场写 UA/路径规则，最多 3 条，
+  `nginx -t` 失败自动回滚）。
+- 蜜罐：`/admin`、`/.env`、`/wp-login.php` 返回假页面，命中即 `HONEYPOT` 封 1 小时。
 - `autopilot=on`：后台线程每 30 秒检查新告警，没有新告警不调用模型；已封禁 IP 跳过、
   同批去重、每小时最多 20 次调用、API 失败退避 5 分钟。
 - 密钥放 `data/agent.env`（600）：
@@ -148,7 +154,7 @@ sudo systemctl restart nightwatch
 ## 测试
 
 ```bash
-.venv/bin/python -m pytest -q        # 47 个单测
+.venv/bin/python -m pytest -q        # 51 个单测（Linux）
 .venv/bin/python scripts/selftest.py # 16 条端到端（CLI）
 bash scripts/redteam.sh              # 9 个红队用例 → 矩阵
 ```

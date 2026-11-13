@@ -6,6 +6,10 @@ Cmnd_Alias NW_FW = /usr/local/sbin/nw-fw init, \
                    /usr/local/sbin/nw-fw flush, \
                    /usr/local/sbin/nw-fw panic, \
                    /usr/local/sbin/nw-fw reconcile, \
-                   /usr/local/sbin/nw-fw selftest
+                   /usr/local/sbin/nw-fw selftest, \
+                   /usr/local/sbin/nw-waf add-ua *, \
+                   /usr/local/sbin/nw-waf add-path *, \
+                   /usr/local/sbin/nw-waf list, \
+                   /usr/local/sbin/nw-waf clear
 Defaults:li !requiretty
 li ALL=(root) NOPASSWD: NW_FW
