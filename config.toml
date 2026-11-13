@@ -18,7 +18,7 @@ path = "/var/log/suricata/eve.json"
 parser = "suricata_eve"
 [[ingest.sources]]
 name = "waf"
-path = "/var/log/nginx/modsec_audit.log"
+path = "/var/log/nginx/modsec_audit.json"
 parser = "modsec_json"
 [[ingest.sources]]
 name = "nginx"

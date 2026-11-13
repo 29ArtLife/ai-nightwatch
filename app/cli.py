@@ -86,6 +86,19 @@ def _watch_line(r: dict, color: bool, jsonl: bool) -> str:
     return f"{c}{line}{_RESET}" if c else line
 
 
+def cmd_battle(args):
+    from battle.agent import BattleAgent
+    from battle.plain import PlainPrinter
+    cfg, store, worker, core = _ctx()
+    printer = PlainPrinter(color=not args.no_color)
+    agent = BattleAgent(cfg, store, worker, core, printer,
+                        interval=args.interval, model=not args.no_model)
+    try:
+        agent.run()
+    except KeyboardInterrupt:
+        print("battle stopped", flush=True)
+
+
 def cmd_watch(args):
     cfg, store, worker, core = _ctx()
     last = args.since or (0 if args.from_start else store.max_event_id())
@@ -359,6 +372,12 @@ def main():
     p = sub.add_parser("status", help="运行状态")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_status)
+
+    p = sub.add_parser("battle", help="实战模式：你攻击，AI 防守，实时显示")
+    p.add_argument("--interval", type=float, default=0.5)
+    p.add_argument("--no-color", action="store_true")
+    p.add_argument("--no-model", action="store_true", help="只显示确定性防线")
+    p.set_defaults(fn=cmd_battle)
 
     p = sub.add_parser("watch", help="实时输出新事件（攻击→检测→封禁）")
     p.add_argument("--ip", default="")

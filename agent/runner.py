@@ -58,7 +58,13 @@ def _validate_citations(store, answer: str) -> list[int]:
 
 
 def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = None,
-              source: str = "chat") -> dict:
+              source: str = "chat", on_trace=None) -> dict:
+    def emit(ev: dict):
+        if on_trace:
+            try:
+                on_trace(ev)
+            except Exception:
+                pass
     if not cfg.get("agent", {}).get("enabled", False):
         return {"ok": False, "error": "AI 调查已在配置中关闭"}
     specs = build_specs(cfg)
@@ -92,8 +98,12 @@ def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = No
                 except json.JSONDecodeError:
                     args = {}
                 t0 = time.time()
+                emit({"type": "tool_start", "step": steps, "tool": name, "args": args})
                 result = execute(ctx, name, args)
                 ms = int((time.time() - t0) * 1000)
+                emit({"type": "tool_end", "step": steps, "tool": name, "args": args,
+                      "ok": "error" not in result, "duration_ms": ms,
+                      "preview": json.dumps(result, ensure_ascii=False)[:300]})
                 ctx.worker.enqueue_event("agent_tool", "0.0.0.0", {
                     "tool": name, "args": args, "ok": "error" not in result,
                     "duration_ms": ms,
@@ -128,6 +138,7 @@ def run_agent(message: str, cfg: dict, ctx: Ctx, history: list[dict] | None = No
         "model": cfg["agent"].get("model"), "steps": steps,
         "tools": [t["tool"] for t in trace],
         "citations_invalid": bad})
+    emit({"type": "final", "answer": final, "steps": steps})
     return {"ok": True, "answer": final, "trace": trace, "steps": steps,
             "citations_invalid": bad, "warning": warning,
             "model": cfg["agent"].get("model")}

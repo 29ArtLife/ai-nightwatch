@@ -9,7 +9,9 @@
     create 0640 root adm
 }
 
-/var/log/nginx/modsec_audit.log {
+# 故意用 .json 后缀，避开 nginx 包 /var/log/nginx/*.log 的 rename 轮转；
+# ModSecurity 不会在 rename 后重开文件，copytruncate 才能持续写入。
+/var/log/nginx/modsec_audit.json {
     daily
     rotate 7
     compress
