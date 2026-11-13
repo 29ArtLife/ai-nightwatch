@@ -175,6 +175,18 @@ bash scripts/deploy.sh
 换网络后同步四处：`config.toml` 的 `enforce.whitelist_ips`、`/etc/nightwatch/fw-allow`、
 nft `nw_allow`、`scripts/patch_suricata.py` 的 `HOME_NET`。
 
+## 完整文档
+
+- [快速开始](docs/01-快速开始.md)
+- [架构设计](docs/02-架构设计.md)
+- [CLI 参考](docs/03-CLI参考.md)
+- [防线与规则](docs/04-防线与规则.md)
+- [AI Agent](docs/05-AI-Agent.md)
+- [部署运维](docs/06-部署运维.md)
+- [演示脚本](docs/07-演示脚本.md)
+- [测试与验收](docs/08-测试与验收.md)
+- [安全边界与 FAQ](docs/09-安全边界与FAQ.md)
+
 ## 边界
 
 - 只守护自有/授权资产；只封禁/告警/观察，不做反击。
