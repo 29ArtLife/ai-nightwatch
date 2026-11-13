@@ -7,7 +7,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-OUT = "D:/AI/ku/docs/网安agent/AI守夜人-实战对抗演示方案.docx"
+OUT = "D:/AI/ku/docs/网安agent/AI守夜人-实战对抗演示方案-v1.1.docx"
 FONT = "微软雅黑"
 MONO = "Consolas"
 DARK = RGBColor(0x1F, 0x3A, 0x5F)
@@ -445,13 +445,19 @@ para("textual 装不上或终端不兼容时，nightwatch battle --plain 退化�
 h("7.3 延迟预期", 2)
 para("确定性事件流 0.2–1 秒；AI 工具调用 1–3 秒。左侧即时，右侧稍慢，"
      "但“已封禁”由确定性引擎先落地，不会等模型。")
+para("实测：TUI 在 120×40 终端渲染正常；Kali 发起 sqlmap 后，左侧实时出现 "
+     "WAF_ALERT/BAN，右侧逐条出现 attack_chain/firewall_status 与 AI 结论，"
+     "底部记分牌 attacks/bans 更新。")
 
 # ---------------- 8 ----------------
 h("8. 攻击方剧本（Kali）", 1)
 h("8.1 网络准备", 2)
 bullets([
-    "VirtualBox：Kali 网卡设为 Bridged Adapter，桥接当前 Wi-Fi。",
+    "VirtualBox：Kali 网卡先试 Bridged Adapter，桥接当前有线/无线网卡。",
     "验证：ping 10.2.102.143；不通则改 NAT 或使用服务器 netns 兜底。",
+    "校园网可能对 VM 的 MAC 做准入限制：能上网、能到网关，但到 10.2.102.x 被拦；"
+    "此时桥接和静态 IP 都无效，改用 NAT。NAT 下服务器看到的源是宿主 IP，"
+    "22 端口仍在 nft drop 之前放行，管理 SSH 不受影响。",
     "确认目标端口：8081（WAF）、2222（假 SSH）；不要打真实 SSH 22。",
 ])
 h("8.2 攻击命令", 2)

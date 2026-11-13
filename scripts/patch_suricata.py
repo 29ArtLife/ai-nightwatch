@@ -33,7 +33,7 @@ replace_block("af-packet:", "pcap:",
               "    cluster-id: 97\n"
               "    cluster-type: cluster_flow\n")
 replace_block("pcap:", "pcap-file:",
-              "pcap:\n  - interface: wlp1s0\n")
+              "pcap:\n  - interface: wlp1s0\n  - interface: nw-kali0\n")
 
 s = "\n".join(lines)
 for old in ('HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"',

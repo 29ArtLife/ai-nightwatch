@@ -7,6 +7,7 @@ echo "[1/9] venv + deps"
 [ -d .venv ] || python3 -m venv .venv
 .venv/bin/pip install -q -U pip
 .venv/bin/pip install -q -r requirements.txt
+[ -f requirements-tui.txt ] && .venv/bin/pip install -q -r requirements-tui.txt || true
 
 echo "[2/9] dirs"
 mkdir -p data logs osv
@@ -45,6 +46,9 @@ echo "[5/9] logrotate + suricata local rules"
 sudo install -m 644 deploy/logrotate.d/nightwatch /etc/logrotate.d/nightwatch
 if [ -d /var/lib/suricata/rules ]; then
   sudo install -m 644 deploy/suricata/local.rules /var/lib/suricata/rules/local.rules
+  sudo install -d -m 755 /etc/systemd/system/suricata.service.d
+  sudo install -m 644 deploy/suricata-override.conf \
+    /etc/systemd/system/suricata.service.d/override.conf
   [ -f /var/lib/suricata/rules/suricata.rules ] || \
     echo "WARN: 缺少 suricata.rules，请先下载 ET Open 规则"
 fi

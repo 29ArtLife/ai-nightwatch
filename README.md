@@ -13,6 +13,7 @@
 ```bash
 cd ~/nightwatch
 ./nightwatch status              # 运行状态
+./nightwatch battle --tui        # 实战对抗作战室（你从 Kali 打）
 ./nightwatch watch               # 实时事件流（另开终端攻击）
 ./nightwatch events --limit 20   # 最近事件
 ./nightwatch bans                # 生效封禁
@@ -34,6 +35,7 @@ sudo journalctl -u nightwatch -f
 |---|---|
 | `daemon` | 常驻采集/检测/裁决/封禁 + AI 值守（systemd 使用） |
 | `status [--json]` | 守护状态、事件数、封禁数、采集源、链完整性、AI 状态 |
+| `battle [--tui\|--plain] [--no-model]` | **实战对抗**：你攻击，AI 防守，终端实时显示 |
 | `watch [--ip] [--kind] [--rule] [--jsonl]` | **实时输出**新事件（攻击→检测→封禁） |
 | `events [--ip] [--kind] [--rule] [--since] [--limit] [--json]` | 查事件账本 |
 | `event <id> [--json]` | 单条事件的完整证据与哈希 |
@@ -82,12 +84,38 @@ AI：只读工具 + 建议/执行封禁（autonomy=auto 且有护栏）；不在
 
 ## 网络防线
 
-- Suricata：ET SCAN/DOS + 本地 SYN 规则 → `NET_SCAN/NET_DOS/NET_EXPLOIT/NET_C2`
-- ModSecurity CRS：913/930/932/941/942 等 → `WAF_SCANNER/LFI/RCE/XSS/SQLI`
+- Suricata：**pcap 同时抓 `wlp1s0 + nw-kali0`**；ET SCAN/DOS + 本地 SYN 规则
+  → `NET_SCAN/NET_DOS/NET_EXPLOIT/NET_C2`
+- ModSecurity CRS：913/930/932/941/942 等 → `WAF_SCANNER/LFI/RCE/XSS/SQLI`；
+  审计日志是 `/var/log/nginx/modsec_audit.json`（故意避开 nginx 的 `*.log` 轮转）
 - nginx limit_req 429 → `HTTP_FLOOD`
 - nftables `inet nightwatch`：`nw_block` 带 timeout；22 端口在 drop 之前放行；
   白名单在 `/etc/nightwatch/fw-allow`，li 只能通过 root wrapper `nw-fw` 操作。
 - 封禁/解封/到期/清空全部写哈希链；启动时按账本对账回放。
+
+## 实战对抗（Battle）
+
+服务端：
+
+```bash
+cd ~/nightwatch
+./nightwatch battle --tui      # 全屏作战室；textual 缺失时用 --plain
+```
+
+Kali（攻击机）：
+
+```bash
+nmap -sS -Pn -p 1-1024 10.2.102.143
+nikto -h http://10.2.102.143:8081
+sqlmap -u "http://10.2.102.143:8081/lab/item?id=1" --batch
+hping3 -S -c 2000 -i u2000 -p 8081 10.2.102.143
+curl http://10.2.102.143:8081/admin       # 蜜罐（后续版本）
+```
+
+- 校园网若对 VM 的 MAC 做准入限制，桥接会“能上网但到 10.2.102.x 不通”；
+  此时用 **NAT**：Kali 仍是攻击机，服务器看到的源是宿主 IP。
+- NAT 源 IP 被封不影响管理 SSH：nft 规则里 22 在 drop 之前放行。
+- 每次演示后 `./nightwatch unban <源IP>` 清理。
 
 ## AI 调查与自主处置
 

@@ -87,9 +87,17 @@ def _watch_line(r: dict, color: bool, jsonl: bool) -> str:
 
 
 def cmd_battle(args):
+    cfg, store, worker, core = _ctx()
+    if args.tui:
+        try:
+            from battle.tui import BattleTUI
+            BattleTUI(cfg, store, worker, core, interval=args.interval,
+                      model=not args.no_model).run()
+            return
+        except ImportError:
+            print("textual 未安装，回退到 --plain", flush=True)
     from battle.agent import BattleAgent
     from battle.plain import PlainPrinter
-    cfg, store, worker, core = _ctx()
     printer = PlainPrinter(color=not args.no_color)
     agent = BattleAgent(cfg, store, worker, core, printer,
                         interval=args.interval, model=not args.no_model)
@@ -374,6 +382,7 @@ def main():
     p.set_defaults(fn=cmd_status)
 
     p = sub.add_parser("battle", help="实战模式：你攻击，AI 防守，实时显示")
+    p.add_argument("--tui", action="store_true", help="全屏终端作战室（需 textual）")
     p.add_argument("--interval", type=float, default=0.5)
     p.add_argument("--no-color", action="store_true")
     p.add_argument("--no-model", action="store_true", help="只显示确定性防线")
