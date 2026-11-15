@@ -1,0 +1,212 @@
+<!doctype html>
+<!--
+  HALOFLUX - Copyright (c) 2026 Ryder191 (RYDER CODE / Ms MAIKEBAIs CAT). All rights reserved.
+  https://github.com/Ryder191/haloflux
+
+  Source code and audiovisual design are original works protected by copyright.
+  Licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).
+  Noncommercial use only. ANY COMMERCIAL USE IS STRICTLY PROHIBITED.
+  Keep this notice and credit "HALOFLUX by Ryder191" when sharing or remixing.
+
+  源代码与视觉设计均为原创作品，受著作权保护。按 PolyForm Noncommercial 1.0.0 授权。
+  仅限非商业用途，严格禁止任何商业用途。转载或二创须保留本声明并注明出处。
+
+  Remixed & adapted for NIGHTWATCH (AI 守夜人) Cyber-Defense Visualizer.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIGHTWATCH // HALOFLUX 攻防作战室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#08090b; --panel:#0e0f12; --line:#25282e; --line2:#3a3e46;
+  --text:#cfd2d8; --dim:#6b6f78; --faint:#3f434a; --white:#f4f5f7;
+  --pink:#f0a6c6; --teal:#98e0cf; --red:#ff3b5c; --amber:#ffaa2b;
+  --cyan:#38bdf8; --violet:#c084fc;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"JetBrains Mono",Consolas,monospace;overflow:hidden}
+.app{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh}
+body.cinema header,body.cinema .panels{display:none}
+body.cinema .app{grid-template-rows:1fr}
+
+/* ---------- header ---------- */
+header{display:grid;grid-template-columns:minmax(260px,1.7fr) repeat(5,minmax(0,1fr));align-items:end;border-bottom:1px solid var(--line);padding:10px 18px 0;background:#0a0b0d}
+.brand h1{white-space:nowrap;margin:0;font-size:20px;font-weight:800;letter-spacing:1.5px;color:var(--white)}
+.brand h1 span{color:var(--cyan)}
+.brand p{margin:3px 0 9px;font-size:9px;color:var(--dim);letter-spacing:1.2px}
+.kpi{padding:0 10px 9px;position:relative}
+.kpi .k{font-size:9px;color:var(--dim);letter-spacing:1.2px}
+.kpi .v{font-size:14px;font-weight:800;color:var(--white);font-variant-numeric:tabular-nums}
+.kpi .v.pink{color:var(--pink)}
+.kpi .v.cyan{color:var(--cyan)}
+.kpi .v.red{color:var(--red)}
+.kpi .v.teal{color:var(--teal)}
+.kpi .seg{position:absolute;left:10px;right:0;bottom:-1px;height:2px;background:var(--line)}
+.kpi .seg i{display:block;height:100%;background:var(--text);width:20%;transition:width .5s ease,background .4s ease}
+
+/* ---------- stage ---------- */
+.stage{position:relative;min-height:0;overflow:hidden}
+#stage{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px),
+             radial-gradient(ellipse at 40% 50%,transparent 55%,rgba(0,0,0,.55) 100%)}
+.ov{position:absolute;font-size:9px;letter-spacing:1px;color:var(--text);pointer-events:none;z-index:2}
+.chk{left:0;top:0;will-change:transform;background:rgba(8,9,11,.88);border:1px solid var(--line2);padding:5px 9px;transition:opacity .25s,border-color .3s;max-width:240px}
+.chk.alert{border-color:var(--red)}
+.chk.ban{border-color:var(--cyan)}
+.chk.ai{border-color:var(--violet)}
+.chk b{display:block;font-size:8px;color:var(--dim);font-weight:600;margin-bottom:2px}
+.chk span{display:block;font-size:11px;color:var(--white);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* top-right tactical controls */
+.topbar{top:10px;right:14px;z-index:4;pointer-events:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.pill{border:1px solid var(--line2);padding:3px 8px;background:rgba(8,9,11,.84);cursor:pointer;user-select:none;color:var(--text);font:inherit;font-size:9px;letter-spacing:1px}
+.pill:hover{border-color:#cfd2d8;color:#fff}
+.pill.on{border-color:var(--cyan);color:var(--cyan)}
+.pill.live{border-color:var(--teal);color:var(--teal)}
+.pill.demo{border-color:var(--amber);color:var(--amber)}
+
+.music{display:flex;align-items:center;gap:6px;border:1px solid var(--line2);padding:2px 8px;background:rgba(8,9,11,.84);user-select:none}
+.music .mbtn{cursor:pointer;display:flex;align-items:center;gap:5px}
+.music:hover{border-color:#cfd2d8}
+.music em{font-style:normal;white-space:nowrap}
+.music.on em{color:var(--white)}
+.music.wait em{animation:bl 1s steps(1) infinite}
+.music .eq{display:inline-flex;align-items:flex-end;gap:1px;height:8px}
+.music .eq b{display:block;width:2px;height:2px;background:var(--dim)}
+.music.on .eq b{background:var(--white);animation:eqb .9s ease-in-out infinite}
+.music.on .eq b:nth-child(2){animation-delay:-.3s}
+.music.on .eq b:nth-child(3){animation-delay:-.6s}
+@keyframes eqb{0%,100%{height:2px}50%{height:8px}}
+.music input[type=range]{width:58px;height:10px;margin:0;accent-color:#cfd2d8;cursor:pointer}
+.music .mval{width:16px;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+
+.simbar{right:14px;top:40px;z-index:4;pointer-events:auto;display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.simbar button{background:rgba(12,14,18,.86);border:1px solid var(--line2);color:var(--text);font:inherit;font-size:8px;padding:3px 7px;cursor:pointer;letter-spacing:.8px}
+.simbar button:hover{border-color:#fff;color:#fff}
+.simbar button.atk:hover{border-color:var(--red);color:var(--red)}
+.simbar button.ai:hover{border-color:var(--violet);color:var(--violet)}
+.simbar button.def:hover{border-color:var(--cyan);color:var(--cyan)}
+
+.status{right:16px;bottom:10px;text-align:right}
+.status .big{font-size:11px;color:var(--white);font-weight:800}
+.status .sm{color:var(--dim);font-size:8px;margin-top:2px}
+
+/* ---------- panels ---------- */
+.panels{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:8px 12px 12px;border-top:1px solid var(--line);background:#0a0b0d}
+.p{border:1px solid var(--line);background:var(--panel);padding:7px 10px 6px;height:clamp(124px,18vh,174px);display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.p h3{margin:0 0 5px;font-size:9px;font-weight:800;letter-spacing:1.3px;color:var(--white);white-space:nowrap;display:flex;justify-content:space-between}
+.p h3 i{font-style:normal;color:var(--dim);font-weight:400}
+.p .cap{margin-top:auto;font-size:8px;color:var(--dim);padding-top:3px;white-space:nowrap;overflow:hidden}
+.p canvas{width:100%;flex:1;min-height:0;display:block}
+
+.feed{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:flex-end;font-size:9px;line-height:1.4;overflow:hidden}
+.feed div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+.feed div:last-child{color:var(--white);font-weight:600}
+.n{color:var(--faint);margin-right:6px}
+.vb{display:inline-block;width:50px;font-weight:800}
+.vb.waf{color:var(--pink)} .vb.net{color:var(--amber)} .vb.ban{color:var(--cyan)}
+.vb.hp{color:var(--red)} .vb.ai{color:var(--violet)} .vb.ok{color:var(--teal)}
+
+.btns{display:flex;gap:4px;margin-top:4px}
+.btns span{flex:1;font-size:8px;border:1px solid var(--line2);padding:1px 5px;color:var(--dim);text-align:center;transition:all .25s}
+.btns span.on{background:#cfd2d8;color:#000;border-color:#cfd2d8;font-weight:800}
+
+.code{flex:1;min-height:0;font-size:9px;line-height:1.42;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+.code div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.code .ln{color:var(--faint);margin-right:7px}
+.code .fn{color:var(--violet);font-weight:800}
+.code .ok{color:var(--teal)}
+.code .op{color:var(--text)}
+.caret{display:inline-block;width:6px;height:10px;background:var(--white);vertical-align:-1px;animation:bl 1s steps(1) infinite}
+@keyframes bl{50%{opacity:0}}
+
+.routes{display:grid;grid-template-columns:1.25fr repeat(3,1fr);gap:3px 6px;font-size:8px;align-content:start}
+.routes .h{color:var(--dim);font-weight:800;letter-spacing:1px}
+.routes .nm{color:var(--text);white-space:nowrap;overflow:hidden}
+.chip{display:inline-block;padding:0 4px;border:1px solid var(--line2);border-radius:2px;color:var(--faint);line-height:11px;transition:all .25s}
+.chip.on{background:var(--cyan);color:#000;border-color:var(--cyan);font-weight:800}
+.chip.done{background:#232730;color:var(--teal);border-color:#2f3844}
+.chip.pk{background:rgba(255,59,92,.22);color:var(--red);border-color:rgba(255,59,92,.6);font-weight:800}
+
+.bans{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:3px;font-size:8.5px}
+.ban-row{display:grid;grid-template-columns:1.1fr .9fr .55fr auto;gap:5px;align-items:center;padding:2px 4px;background:#13161b;border-left:2px solid var(--cyan)}
+.ban-row .ip{color:var(--white);font-weight:700}
+.ban-row .rl{color:var(--pink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ban-row .ttl{color:var(--teal);text-align:right;font-variant-numeric:tabular-nums}
+.ban-row button{background:#1b1f27;border:1px solid var(--line2);color:var(--text);font:inherit;font-size:7.5px;padding:1px 5px;cursor:pointer}
+.ban-row button:hover{border-color:var(--cyan);color:var(--cyan)}
+.bans-empty{color:var(--dim);font-size:8.5px;padding:8px 0}
+
+@media (max-width:1000px){
+  html,body{overflow:auto}
+  .app{height:auto}
+  .stage{height:62vh}
+  header{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 0}
+  .brand{grid-column:1/-1}
+  .panels{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .p{height:155px}
+}
+@media (max-width:520px){
+  header{padding:10px 16px 0}
+  .panels{grid-template-columns:minmax(0,1fr);padding:8px 16px 16px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><h1>NIGHTWATCH <span>//</span> HALOFLUX</h1><p>SURICATA · MODSECURITY · NFTABLES · DEEPSEEK AGENT</p></div>
+    <div class="kpi"><div class="k">EVENTS IN CHAIN</div><div class="v" id="kEvents">0</div><div class="seg"><i id="sEvents"></i></div></div>
+    <div class="kpi"><div class="k">ACTIVE BANS (NFT)</div><div class="v cyan" id="kBans">0</div><div class="seg"><i id="sBans"></i></div></div>
+    <div class="kpi"><div class="k">DEFCON LEVEL</div><div class="v teal" id="kDefcon">DEFCON 3</div><div class="seg"><i id="sDefcon"></i></div></div>
+    <div class="kpi"><div class="k">HASH CHAIN</div><div class="v teal" id="kChain">VERIFIED</div><div class="seg"><i id="sChain"></i></div></div>
+    <div class="kpi"><div class="k">AI AUTONOMY</div><div class="v pink" id="kAi">AUTO · ON</div><div class="seg"><i id="sAi"></i></div></div>
+  </header>
+
+  <div class="stage" id="stageWrap">
+    <canvas id="stage"></canvas>
+
+    <div class="ov topbar">
+      <button class="pill demo" id="modeBadge" title="点击切换 LIVE SSE / 离线演示">● DEMO REPLAY</button>
+      <button class="pill" id="sfxBtn" title="开关战术合成音效 (S 键)">SFX OFF</button>
+      <div class="music" id="bgm">
+        <span class="mbtn" id="bgmBtn" title="开/关背景音乐（M 键）"><i class="eq"><b></b><b></b><b></b></i><em id="bgmTxt">BGM OFF</em></span>
+        <input type="range" id="bgmVol" min="0" max="100" step="1" value="60" title="音量">
+        <span class="mval" id="bgmVal">60</span>
+      </div>
+      <button class="pill console">◱ CONSOLE</button>
+    </div>
+
+    <div class="ov simbar" id="simBar">
+      <button class="atk" data-sim="sqli">⚡ SQLi 注入</button>
+      <button class="atk" data-sim="syn">⚡ SYN Flood</button>
+      <button class="atk" data-sim="honeypot">🍯 /admin 蜜罐</button>
+      <button class="atk" data-sim="brute">🔑 暴力登录 ×5</button>
+      <button class="ai" data-sim="ai">🧠 DeepSeek 关联研判</button>
+      <button class="def" data-sim="unban_all">🔓 全部解封</button>
+    </div>
+
+    <audio id="bgmAudio" data-src="audio/sw421k.mp3" loop preload="auto" playsinline></audio>
+    <div class="ov chk" id="chk"><b id="chkK">PERIMETER WATCH</b><span id="chkV">NFTABLES · READY</span></div>
+    <div class="ov status"><div class="big" id="stBig">DEFENSE MATRIX ARMED · 0 ACTIVE BANS</div><div class="sm" id="stSub">H 纯净模式 · C 光环控制台 · F 全屏 · M 音乐</div></div>
+  </div>
+
+  <section class="panels">
+    <div class="p"><h3>THREAT & AUDIT FEED <i id="feedRate">0 eps</i></h3><div class="feed" id="feed"></div></div>
+    <div class="p"><h3>DEFENSE VECTOR FIELD <i>PIPELINE</i></h3><canvas id="cAdv"></canvas>
+      <div class="btns" id="advBtns"><span class="on">INGEST</span><span>DECIDE</span><span>NFTABLES</span></div></div>
+    <div class="p"><h3>DEEPSEEK AI INVESTIGATOR <i>TOOLS & TRACE</i></h3><div class="code" id="code"></div></div>
+    <div class="p"><h3>SURICATA / WAF DELTA FIELD <i>ANOMALY</i></h3><canvas id="cDiff"></canvas><div class="cap">baseline vs live traffic delta · spikes highlight anomaly</div></div>
+    <div class="p"><h3>5-LAYER DEFENSE MATRIX <i>RULES</i></h3><div class="routes" id="routes"></div><div class="cap">suricata → modsec → honeypot → app → nftables</div></div>
+    <div class="p"><h3>SECURITY OSCILLOSCOPE <i>EPS / THREAT / DROP</i></h3><canvas id="cVal"></canvas><div class="cap">real-time telemetry waveform · pink = surge</div></div>
+    <div class="p"><h3>ACTIVE BANS LEDGER <i>NFT_BLOCK</i></h3><div class="bans" id="bansList"></div><div class="cap">click [UNBAN] to emit rollback & remove nft element</div></div>
+    <div class="p"><h3>RULE SIGNATURE MATRIX <i>11 DETECTORS</i></h3><canvas id="cIdx"></canvas><div class="cap">scanline = live rule evaluation across tracked IPs</div></div>
+  </section>
+</div>
+</body>
+</html>

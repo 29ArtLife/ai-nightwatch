@@ -1,0 +1,6 @@
+{
+  "name": "NIGHTWATCH // HALOFLUX Cyber-Defense Visualizer",
+  "description": "Real-time cyber-defense tactical visualizer fusing Nightwatch (Suricata, ModSecurity WAF, Honeypot, nftables, DeepSeek Agent) with the HALOFLUX kinetic particle and ring engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
