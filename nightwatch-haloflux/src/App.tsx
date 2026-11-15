@@ -12,7 +12,6 @@ import {
   RedNodeInfo,
   applyCombatHp,
   calculateEps,
-  computeBattleMomentum,
   computeDefcon,
   deriveCombatOperation,
   evalCubicBezier,
@@ -25,7 +24,6 @@ import { BAKED_MINE, HaloParamDef, SFX } from './utils/haloParams';
 import { ConsoleDrawer } from './components/ConsoleDrawer';
 import { BridgeModal } from './components/BridgeModal';
 import { HostLinkModal } from './components/HostLinkModal';
-import { CombatHudDock } from './components/CombatHudDock';
 
 const TAU = Math.PI * 2;
 const rnd = Math.random;
@@ -127,6 +125,36 @@ const RED_CODE_T = [
   'root:x:0',
 ];
 const rgba = (t: number[], a: number) => `rgba(${t[0]},${t[1]},${t[2]},${a})`;
+
+
+function OrbOpsPanel({ side, ops }: { side: 'blue' | 'red'; ops: CombatOperationLog[] }) {
+  const label = side === 'blue' ? 'BLUE BASTION' : 'RED STRIKE';
+  const accent = side === 'blue' ? 'blue' : 'red';
+  return (
+    <div className={`orb-ops ${accent}`} aria-label={`${label} 执行操作`}>
+      <div className="orb-ops-head">
+        <span>{label} // 执行操作</span>
+        <i>{ops.length ? 'LIVE' : 'IDLE'}</i>
+      </div>
+      {ops.length === 0 ? (
+        <div className="orb-op-empty">等待{side === 'blue' ? '蓝方' : '红方'}真实事件</div>
+      ) : (
+        ops.map((op, idx) => (
+          <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-op ${op.actorCamp}`}>
+            <div className="orb-op-top">
+              <span>#{op.id}</span>
+              <span>{op.ts}</span>
+            </div>
+            <div className="orb-op-title">{op.actionTitle}</div>
+            <div className="orb-op-dir">{op.directionLabel}</div>
+            <div className="orb-op-cmd" title={op.commandLine}>{op.commandLine}</div>
+            <div className="orb-op-hp">{op.hpEffectText}</div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 export default function App() {
   // React UI state for DOM overlays & panels
@@ -317,13 +345,6 @@ export default function App() {
     setRedStrikesCount(eng.redStrikes);
     setBlueHp(eng.blueHp);
     setRedHp(eng.redHp);
-  }, []);
-
-  const handleResetHp = useCallback(() => {
-    engineRef.current.blueHp = MAX_CAMP_HP;
-    engineRef.current.redHp = MAX_CAMP_HP;
-    setBlueHp(MAX_CAMP_HP);
-    setRedHp(MAX_CAMP_HP);
   }, []);
 
   const pushFeed = useCallback(
@@ -1164,6 +1185,12 @@ export default function App() {
       GR: Record<string, CanvasGradient> = {};
 
     const C = engineRef.current.C;
+    C.runnerCount = 0;
+    C.cometPerBeat = 0;
+    C.cometTrickle = 0;
+    C.cometBurst = 0;
+    C.dataFlicker = 0;
+    C.webSpin = 0;
 
     function mkd(w: number, h: number, d = DPR) {
       const c = document.createElement('canvas') as HTMLCanvasElement & {
@@ -1252,43 +1279,13 @@ export default function App() {
       };
     }
 
-    function spawnComet() {
-      if (comets.length > 26) return;
-      comets.push(createCometObject());
-    }
+    function spawnComet() {}
 
-    function spawnRedComet() {
-      if (redComets.length > 26) return;
-      const obj = createCometObject();
-      obj.rot0 = redRingRot;
-      redComets.push(obj);
-    }
+    function spawnRedComet() {}
 
-    function flashSlotAt(ang: number) {
-      let best: any = null,
-        bd = 9;
-      for (const s of slots) {
-        const d = Math.abs(normA(s.a + ringRot - ang));
-        if (d < bd) {
-          bd = d;
-          best = s;
-        }
-      }
-      if (best && bd < 0.14) best.flash = Math.max(best.flash, 0.95);
-    }
+    function flashSlotAt(_ang: number) {}
 
-    function flashRedSlotAt(ang: number) {
-      let best: any = null,
-        bd = 9;
-      for (const s of redSlots) {
-        const d = Math.abs(normA(s.a + redRingRot - ang));
-        if (d < bd) {
-          bd = d;
-          best = s;
-        }
-      }
-      if (best && bd < 0.14) best.flash = Math.max(best.flash, 0.95);
-    }
+    function flashRedSlotAt(_ang: number) {}
 
     engineRef.current.flashSlotAt = flashSlotAt;
     engineRef.current.flashRedSlotAt = flashRedSlotAt;
@@ -1298,12 +1295,10 @@ export default function App() {
     function buildWeb() {
       const size = 2 * R + 4,
         d = 0.85;
-      // Left (Blue) Neural Web
       webBase = mkd(size, size, d);
-      webLayers = [0, 1, 2].map(() => mkd(size, size, d));
-      const allBlue = [webBase, ...webLayers];
-      allBlue.forEach((c) => c.x.translate(R + 2, R + 2));
       const b = webBase.x;
+      b.save();
+      b.translate(R + 2, R + 2);
       b.beginPath();
       b.arc(0, 0, R, 0, TAU);
       const g = b.createRadialGradient(0, 0, R * 0.2, 0, 0, R);
@@ -1311,19 +1306,12 @@ export default function App() {
       g.addColorStop(1, '#090c12');
       b.fillStyle = g;
       b.fill();
-      allBlue.forEach((c) => {
-        c.x.save();
-        c.x.beginPath();
-        c.x.arc(0, 0, R, 0, TAU);
-        c.x.clip();
-      });
+      b.restore();
 
-      // Right (Red) Symmetrical Neural Web (Image 3 Particle Core Replicated!)
       redWebBase = mkd(size, size, d);
-      redWebLayers = [0, 1, 2].map(() => mkd(size, size, d));
-      const allRed = [redWebBase, ...redWebLayers];
-      allRed.forEach((c) => c.x.translate(R + 2, R + 2));
       const rb = redWebBase.x;
+      rb.save();
+      rb.translate(R + 2, R + 2);
       rb.beginPath();
       rb.arc(0, 0, R, 0, TAU);
       const rg = rb.createRadialGradient(0, 0, R * 0.2, 0, 0, R);
@@ -1331,97 +1319,7 @@ export default function App() {
       rg.addColorStop(1, '#0d0608');
       rb.fillStyle = rg;
       rb.fill();
-      allRed.forEach((c) => {
-        c.x.save();
-        c.x.beginPath();
-        c.x.arc(0, 0, R, 0, TAU);
-        c.x.clip();
-      });
-
-      curves = [];
-      const N = Math.min(1500, Math.round(680 + (W * H) / 1200));
-      for (let i = 0; i < N; i++) {
-        const a1 = rnd() * TAU,
-          a2 = a1 + rr(0.6, Math.PI * 1.4);
-        const p0 = { x: Math.cos(a1) * R, y: Math.sin(a1) * R },
-          p1 = { x: Math.cos(a2) * R, y: Math.sin(a2) * R };
-        const cr = Math.sqrt(rnd()) * R * 0.9,
-          ca = rnd() * TAU;
-        const c = { x: Math.cos(ca) * cr, y: Math.sin(ca) * cr };
-        curves.push({ p0, c, p1 });
-        const layer = rnd() < 0.7 ? -1 : (rnd() * 3) | 0;
-        const al = Math.min(
-          1,
-          (layer < 0 ? 0.03 + Math.pow(rnd(), 3) * 0.28 : 0.08 + Math.pow(rnd(), 2) * 0.35) *
-            C.webBright
-        );
-        const lw = rr(0.4, 1.1);
-        const k = rnd();
-
-        // Draw onto Blue Sphere Web
-        const xb = layer < 0 ? b : webLayers[layer].x;
-        xb.strokeStyle =
-          k < 0.08
-            ? `rgba(56,189,248,${al})`
-            : k < 0.14
-              ? `rgba(192,132,252,${al})`
-              : `rgba(228,231,238,${al})`;
-        xb.lineWidth = lw;
-        xb.beginPath();
-        xb.moveTo(p0.x, p0.y);
-        xb.quadraticCurveTo(c.x, c.y, p1.x, p1.y);
-        xb.stroke();
-
-        // Draw onto Red Sphere Web (Crimson / Amber / Rose-White)
-        const xr = layer < 0 ? rb : redWebLayers[layer].x;
-        xr.strokeStyle =
-          k < 0.12
-            ? `rgba(255,59,92,${al * 1.1})`
-            : k < 0.2
-              ? `rgba(255,170,43,${al})`
-              : `rgba(244,225,230,${al * 0.92})`;
-        xr.lineWidth = lw;
-        xr.beginPath();
-        xr.moveTo(p0.x, p0.y);
-        xr.quadraticCurveTo(c.x, c.y, p1.x, p1.y);
-        xr.stroke();
-      }
-
-      b.font = `6px ${FONT}`;
-      b.textBaseline = 'middle';
-      rb.font = `6px ${FONT}`;
-      rb.textBaseline = 'middle';
-      for (let i = 0; i < 48; i++) {
-        const rr_ = Math.sqrt(rnd()) * R * 0.92,
-          a = rnd() * TAU;
-        const px = Math.cos(a) * rr_,
-          py = Math.sin(a) * rr_,
-          s = rr(2, 4.5);
-
-        // Blue node circles
-        b.strokeStyle = `rgba(56,189,248,${rr(0.35, 0.75)})`;
-        b.lineWidth = 0.8;
-        b.beginPath();
-        b.arc(px, py, s, 0, TAU);
-        b.stroke();
-        if (rnd() < 0.35) {
-          b.fillStyle = 'rgba(152,224,207,.55)';
-          b.fillText('nw' + ((rnd() * 99) | 0), px + 7, py);
-        }
-
-        // Red node circles (Image 3 style inside Right Sphere!)
-        rb.strokeStyle = `rgba(255,59,92,${rr(0.4, 0.8)})`;
-        rb.lineWidth = 0.8;
-        rb.beginPath();
-        rb.arc(px, py, s, 0, TAU);
-        rb.stroke();
-        if (rnd() < 0.35) {
-          rb.fillStyle = 'rgba(255,170,43,.58)';
-          rb.fillText('kl' + ((rnd() * 99) | 0), px - 22, py);
-        }
-      }
-      allBlue.forEach((c) => c.x.restore());
-      allRed.forEach((c) => c.x.restore());
+      rb.restore();
     }
 
     function makeProfile(n: number) {
@@ -1625,18 +1523,6 @@ export default function App() {
     function buildCards() {
       slots = [];
       redSlots = [];
-      const band = RO - R,
-        mid = R + band * 0.42;
-      let a = 0;
-      while (a < TAU - 0.03) {
-        const hpx = rr(16, 62),
-          da = hpx / mid,
-          gap = rr(3, 9) / mid;
-        slots.push({ a: a + da / 2, da, hpx, c: null, flash: 0 });
-        redSlots.push({ a: a + da / 2, da, hpx, c: null, flash: 0 });
-        a += da + gap;
-      }
-      Object.assign(rot, { from: 0, to: 0, t: 1, dur: 1, hold: 0 });
     }
 
     function rimW() {
@@ -1945,33 +1831,7 @@ export default function App() {
       }
     }
 
-    function ringMove() {
-      const r = rnd();
-      let d: number, dur: number, ease: typeof easeIO;
-      if (r < 0.22) {
-        d = rr(1.0, 1.9);
-        dur = rr(0.7, 1.05);
-        ease = easeIO;
-      } else if (r < 0.64) {
-        d = rr(0.14, 0.48);
-        dur = rr(0.18, 0.38);
-        ease = easeOX;
-      } else {
-        d = rr(0.05, 0.18);
-        dur = rr(0.3, 0.6);
-        ease = easeIO;
-      }
-      if (rnd() < 0.08) d = -d * 0.5;
-      d *= C.ringSpeed;
-      Object.assign(rot, {
-        from: ringRot,
-        to: ringRot + d,
-        t: 0,
-        dur,
-        ease,
-        hold: rr(0.04, 0.4) * C.ringPause,
-      });
-    }
+    function ringMove() {}
 
     function onBeatOuter() {
       if (engineRef.current.viewVersion !== 'v1') return;
@@ -2807,7 +2667,7 @@ export default function App() {
     function drawStage(dt: number) {
       const eng = engineRef.current;
       const isV1 = eng.viewVersion === 'v1';
-      updateBeat(dt);
+      if (isV1) updateBeat(dt);
       updateCam();
       if (isV1) updateOuter(dt);
       updateBattleFX(dt);
@@ -2815,17 +2675,10 @@ export default function App() {
         spawnComet();
         spawnRedComet();
       }
-      webRot += dt * (0.03 + env * 0.14 + eng.aiEnergy * 0.08) * C.webSpin;
-      if (rot.t < rot.dur) {
-        rot.t += dt;
-        ringRot = rot.from + (rot.to - rot.from) * rot.ease(Math.min(1, rot.t / rot.dur));
-      } else {
-        rot.hold -= dt;
-        ringRot += 0.02 * dt;
-      }
-      // Symmetrical rotation for Right Red Sphere!
-      redRingRot = -ringRot;
-      for (let k = 0; k < 3; k++) layerEnv[k] *= Math.exp(-dt * 2.2);
+      // Static dual-orb: no ring/web rotation.
+      webRot = 0;
+      ringRot = 0;
+      redRingRot = 0;
 
       S.setTransform(DPR, 0, 0, DPR, 0, 0);
       S.globalCompositeOperation = 'source-over';
@@ -3435,12 +3288,8 @@ export default function App() {
   };
 
   const nowMs = Date.now();
-  const momentum = computeBattleMomentum(
-    blueBlocksCount,
-    activeBansList.length,
-    redStrikesCount,
-    engineRef.current.threatEnergy
-  );
+  const blueOps = combatOps.filter((o) => o.actorCamp !== 'red').slice(-3).reverse();
+  const redOps = combatOps.filter((o) => o.actorCamp === 'red').slice(-3).reverse();
 
   return (
     <div className="app">
@@ -3739,6 +3588,13 @@ export default function App() {
           </div>
         </div>
 
+        {viewVersion === 'v2' && (
+          <>
+            <OrbOpsPanel side="blue" ops={blueOps} />
+            <OrbOpsPanel side="red" ops={redOps} />
+          </>
+        )}
+
         <div className="ov chk" id="chk" ref={chkRef}>
           <b id="chkK" ref={chkKRef}>
             PERIMETER WATCH
@@ -3748,49 +3604,9 @@ export default function App() {
           </span>
         </div>
 
-        {/* Center Battlefield Red vs Blue Momentum Bar */}
-        <div className="vs-banner" aria-label="红蓝阵营交火态势">
-          <div className="vs-row">
-            <span className="vs-blue">
-              🛡️ BLUE BASTION ({hostConfig.blueHostIp}) · {momentum.bluePct}%
-            </span>
-            <span className="vs-mid">SYMMETRICAL DUAL-CORE DUEL</span>
-            <span className="vs-red">
-              {momentum.redPct}% · ({hostConfig.redPrimaryIp}) RED STRIKE ⚔️
-            </span>
-          </div>
-          <div className="vs-track">
-            <div className="vs-fill-blue" style={{ width: `${momentum.bluePct}%` }} />
-          </div>
-        </div>
-
-        <div className="ov status">
-          <div className="big" id="stBig">
-            {defcon} · {activeBansList.length} ACTIVE BANS ·{' '}
-            {viewVersion === 'v2' ? 'SYMMETRICAL V2' : 'CLASSIC V1'}
-          </div>
-          <div className="sm" id="stSub">
-            H 纯净模式 · C 光环控制台 · F 全屏 · M 音乐 · S 音效
-          </div>
-        </div>
       </main>
 
-      {viewVersion === 'v2' ? (
-        <CombatHudDock
-          blueHp={blueHp}
-          redHp={redHp}
-          hostConfig={hostConfig}
-          blueBlocksCount={blueBlocksCount}
-          redStrikesCount={redStrikesCount}
-          activeBansList={activeBansList}
-          redNodesList={redNodesList}
-          combatOps={combatOps}
-          onResetHp={handleResetHp}
-          onUnbanIp={requestUnban}
-          onUnbanAll={() => runScenario('unban_all')}
-          onOpenHostModal={() => setHostModalOpen(true)}
-        />
-      ) : (
+      {viewVersion === 'v1' && (
         <section className="panels" aria-label="Tactical Telemetry Panels">
           <div className="p">
             <h3>

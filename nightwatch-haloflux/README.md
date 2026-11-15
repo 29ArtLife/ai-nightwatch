@@ -19,6 +19,12 @@ npm run dev
 
 Windows 也可以双击本目录的 `Windows一键启动.bat`。修改前端后可运行 `npm run build` 生成 `dist/`。
 
+重建两个单文件 HTML：
+
+```bash
+npm run build:single
+```
+
 ## 连接守夜人实验机
 
 桥接脚本按守夜人部署目录定位 `data/nightwatch.db`，以只读方式查询账本并通过 SSE 推送事件。网页上的解封操作由桥接服务调用守夜人 CLI。
