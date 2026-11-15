@@ -97,6 +97,19 @@ AI：只读工具 + 建议/执行封禁（autonomy=auto 且有护栏）；不在
 
 ## 实战对抗（Battle）
 
+### HALOFLUX 浏览器作战室
+
+[HALOFLUX 可视化项目](nightwatch-haloflux/)通过红蓝双球展示模拟攻防、告警和处置事件，也支持通过 Python 桥接读取守夜人实验机的事件账本。
+下载仓库后，在 `nightwatch-haloflux/` 下打开 `双击直接打开-红蓝双球攻防大屏V2.html` 即可离线演示。
+开发启动和后端接入见 [HALOFLUX 运行说明](nightwatch-haloflux/README.md)。
+
+> 该子目录为合作者贡献的可选可视化，主项目 CLI 不依赖它。
+> HALOFLUX 素材按 **PolyForm Noncommercial 1.0.0** 授权，**仅非商业使用**；
+> 完整许可与 Required Notice 见 `nightwatch-haloflux/LICENSE`。若主项目需要商业化，
+> 应将该子目录拆分到独立仓库或替换素材。
+
+### 终端作战室
+
 服务端：
 
 ```bash
