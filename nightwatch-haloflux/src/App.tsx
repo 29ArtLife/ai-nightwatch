@@ -127,14 +127,14 @@ const RED_CODE_T = [
 const rgba = (t: number[], a: number) => `rgba(${t[0]},${t[1]},${t[2]},${a})`;
 
 
-function OrbOpsPanel({ side, ops }: { side: 'blue' | 'red'; ops: CombatOperationLog[] }) {
+function OrbOpsPanel({ side, ops, live }: { side: 'blue' | 'red'; ops: CombatOperationLog[]; live: boolean }) {
   const label = side === 'blue' ? 'BLUE BASTION' : 'RED STRIKE';
   const accent = side === 'blue' ? 'blue' : 'red';
   return (
     <div className={`orb-ops ${accent}`} aria-label={`${label} 执行操作`}>
       <div className="orb-ops-head">
         <span>{label} // 执行操作</span>
-        <i>{ops.length ? 'LIVE' : 'IDLE'}</i>
+        <i>{ops.length ? (live ? 'LIVE' : 'DEMO') : live ? 'IDLE' : 'DEMO'}</i>
       </div>
       {ops.length === 0 ? (
         <div className="orb-op-empty">等待{side === 'blue' ? '蓝方' : '红方'}真实事件</div>
@@ -691,11 +691,18 @@ export default function App() {
           : pick([primaryRedIp, '185.220.101.4', '45.155.205.91', '10.200.0.2']));
 
       if (engineRef.current.mode === 'live') {
+        if (kind === 'unban_all') {
+          for (const bannedIp of Array.from(engineRef.current.activeBans.keys())) {
+            requestUnban(bannedIp);
+          }
+          return;
+        }
         fetch('/api/sim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scenario: kind, ip }),
         }).catch(() => {});
+        return;
       }
 
       if (kind === 'sqli') {
@@ -900,7 +907,7 @@ export default function App() {
         );
       }
     },
-    [handleNightwatchEvent, pushAI]
+    [handleNightwatchEvent, pushAI, requestUnban]
   );
 
   // Update host configuration
@@ -936,6 +943,12 @@ export default function App() {
     const connectSSE = () => {
       try {
         es = new EventSource('/events');
+        es.onopen = () => {
+          if (engineRef.current.mode !== 'live') {
+            engineRef.current.mode = 'live';
+            setModeState('live');
+          }
+        };
         es.addEventListener('nw_event', (msg: MessageEvent) => {
           if (engineRef.current.mode !== 'live') return;
           try {
@@ -957,7 +970,7 @@ export default function App() {
                 engineRef.current.autopilot = payload.autopilot;
               }
               syncUiFromEngine();
-            } else if (payload.type === 'event' && payload.event) {
+            } else if (payload.type === 'event' && payload.event && engineRef.current.mode === 'live') {
               handleNightwatchEvent(payload.event);
             }
           } catch {
@@ -1782,10 +1795,6 @@ export default function App() {
       glowC.x = glowC.getContext('2d')!;
       runners = [];
       redRunners = [];
-      for (let i = 0; i < C.runnerCount; i++) {
-        runners.push(newRunner(true));
-        redRunners.push(newRunner(true));
-      }
       comets = [];
       redComets = [];
       pulses = [];
@@ -2698,123 +2707,17 @@ export default function App() {
         isAi = eng.aiEnergy > 0.25;
 
       // ====================================================================
-      // 1A. LEFT (BLUE) SPHERE INNER CORE: Neural Web + Particle Runners
+      // 1. STATIC BLUE / RED SPHERE BASES (no synthetic particles)
       // ====================================================================
       camTk(S, DPR, 1 - 0.1 * C.parallax);
       S.save();
       S.translate(cx, cy);
-      S.rotate(webRot);
       S.drawImage(webBase, -R - 2, -R - 2, ws, ws);
-      S.globalCompositeOperation = 'lighter';
-      webLayers.forEach((c, k) => {
-        S.globalAlpha = Math.min(
-          1,
-          C.webPulseBase + C.webPulseAmp * Math.max(layerEnv[k], eng.aiEnergy * 0.85)
-        );
-        S.drawImage(c, -R - 2, -R - 2, ws, ws);
-      });
-      S.globalAlpha = 1;
-
-      const tx = trailC.x;
-      while (runners.length < C.runnerCount) runners.push(newRunner(true));
-      if (runners.length > C.runnerCount)
-        runners.length = Math.max(0, Math.round(C.runnerCount));
-      tx.globalCompositeOperation = 'destination-out';
-      tx.fillStyle = `rgba(0,0,0,${0.05 + env * 0.05})`;
-      tx.fillRect(0, 0, ws, ws);
-      tx.globalCompositeOperation = 'source-over';
-      tx.save();
-      tx.translate(R + 2, R + 2);
-      tx.lineCap = 'round';
-      for (let i = 0; i < runners.length; i++) {
-        const r = runners[i];
-        r.t +=
-          dt *
-          C.runnerSpeed *
-          (r.mode === 1 ? r.sp * surge : r.mode === 2 ? r.sp + 1.3 * r.t * r.t : r.sp);
-        if (r.t >= 1) {
-          runners[i] = newRunner(false);
-          continue;
-        }
-        const p = qpt(r.cv, r.t);
-        if (r.b && isDanger)
-          tx.strokeStyle = `rgba(255,59,92,${Math.min(1, 0.95 * C.runnerBright)})`;
-        else if (r.b && isAi)
-          tx.strokeStyle = `rgba(192,132,252,${Math.min(1, 0.95 * C.runnerBright)})`;
-        else
-          tx.strokeStyle = r.b
-            ? `rgba(56,189,248,${Math.min(1, 0.9 * C.runnerBright)})`
-            : `rgba(248,250,255,${Math.min(1, 0.7 * C.runnerBright)})`;
-        tx.lineWidth = (r.b ? 1.35 : 0.9) * C.runnerWidth;
-        tx.beginPath();
-        tx.moveTo(r.px, r.py);
-        tx.lineTo(p.x, p.y);
-        tx.stroke();
-        r.px = p.x;
-        r.py = p.y;
-      }
-      tx.restore();
-      S.drawImage(trailC, -R - 2, -R - 2, ws, ws);
       S.restore();
-
-      // ====================================================================
-      // 1B. RIGHT (RED) SPHERE INNER CORE: Symmetrical Neural Web + Runners!
-      //     (Image 3 Particle Effect Replicated Inside the Right Sphere!)
-      // ====================================================================
       S.save();
       S.translate(redCx, redCy);
       S.scale(-1, 1);
-      S.rotate(webRot);
       S.drawImage(redWebBase, -R - 2, -R - 2, ws, ws);
-      S.globalCompositeOperation = 'lighter';
-      redWebLayers.forEach((c, k) => {
-        S.globalAlpha = Math.min(
-          1,
-          C.webPulseBase + C.webPulseAmp * Math.max(layerEnv[k], eng.redEnergy * 0.85)
-        );
-        S.drawImage(c, -R - 2, -R - 2, ws, ws);
-      });
-      S.globalAlpha = 1;
-
-      const rtx = redTrailC.x;
-      while (redRunners.length < C.runnerCount) redRunners.push(newRunner(true));
-      if (redRunners.length > C.runnerCount)
-        redRunners.length = Math.max(0, Math.round(C.runnerCount));
-      rtx.globalCompositeOperation = 'destination-out';
-      rtx.fillStyle = `rgba(0,0,0,${0.05 + env * 0.05})`;
-      rtx.fillRect(0, 0, ws, ws);
-      rtx.globalCompositeOperation = 'source-over';
-      rtx.save();
-      rtx.translate(R + 2, R + 2);
-      rtx.lineCap = 'round';
-      for (let i = 0; i < redRunners.length; i++) {
-        const r = redRunners[i];
-        r.t +=
-          dt *
-          C.runnerSpeed *
-          (r.mode === 1 ? r.sp * surge : r.mode === 2 ? r.sp + 1.3 * r.t * r.t : r.sp);
-        if (r.t >= 1) {
-          redRunners[i] = newRunner(false);
-          continue;
-        }
-        const p = qpt(r.cv, r.t);
-        if (r.b)
-          rtx.strokeStyle =
-            i % 3 === 0
-              ? `rgba(255,170,43,${Math.min(1, 0.95 * C.runnerBright)})`
-              : `rgba(255,59,92,${Math.min(1, 0.95 * C.runnerBright)})`;
-        else
-          rtx.strokeStyle = `rgba(255,228,234,${Math.min(1, 0.72 * C.runnerBright)})`;
-        rtx.lineWidth = (r.b ? 1.35 : 0.9) * C.runnerWidth;
-        rtx.beginPath();
-        rtx.moveTo(r.px, r.py);
-        rtx.lineTo(p.x, p.y);
-        rtx.stroke();
-        r.px = p.x;
-        r.py = p.y;
-      }
-      rtx.restore();
-      S.drawImage(redTrailC, -R - 2, -R - 2, ws, ws);
       S.restore();
 
       // ====================================================================
@@ -3590,8 +3493,8 @@ export default function App() {
 
         {viewVersion === 'v2' && (
           <>
-            <OrbOpsPanel side="blue" ops={blueOps} />
-            <OrbOpsPanel side="red" ops={redOps} />
+            <OrbOpsPanel side="blue" ops={blueOps} live={mode === 'live'} />
+            <OrbOpsPanel side="red" ops={redOps} live={mode === 'live'} />
           </>
         )}
 

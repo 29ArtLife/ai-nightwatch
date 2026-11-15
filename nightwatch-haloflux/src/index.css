@@ -979,9 +979,12 @@ header.nw-header {
   }
   .app {
     height: auto;
+    min-height: 100vh;
+    grid-template-rows: auto minmax(62vh, 1fr);
   }
   .stage {
-    height: 62vh;
+    height: auto;
+    min-height: 62vh;
   }
   header.nw-header {
     grid-template-columns: repeat(3, minmax(0, 1fr));
