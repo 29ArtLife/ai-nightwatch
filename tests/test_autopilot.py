@@ -35,6 +35,7 @@ def setup():
     w = W(s)
     svc = S()
     ap = Autopilot(CFG, s, w, svc)
+    ap.enabled = True  # 测试不依赖部署机的 data/autopilot.flag
     ap.last_id = 0
     return s, ap
 
