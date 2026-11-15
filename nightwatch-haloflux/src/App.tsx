@@ -347,6 +347,21 @@ export default function App() {
     setRedHp(eng.redHp);
   }, []);
 
+  const enterLive = useCallback(() => {
+    const eng = engineRef.current;
+    eng.mode = 'live';
+    eng.eventCount = 0;
+    eng.blueBlocks = 0;
+    eng.redStrikes = 0;
+    eng.blueHp = MAX_CAMP_HP;
+    eng.redHp = MAX_CAMP_HP;
+    eng.activeBans.clear();
+    eng.redNodes.clear();
+    setCombatOps([]);
+    setModeState('live');
+    syncUiFromEngine();
+  }, [syncUiFromEngine]);
+
   const pushFeed = useCallback(
     (id: number, tag: string, cls: FeedRecord['cls'], msg: string) => {
       setFeedList((prev) => {
@@ -944,10 +959,7 @@ export default function App() {
       try {
         es = new EventSource('/events');
         es.onopen = () => {
-          if (engineRef.current.mode !== 'live') {
-            engineRef.current.mode = 'live';
-            setModeState('live');
-          }
+          if (engineRef.current.mode !== 'live') enterLive();
         };
         es.addEventListener('nw_event', (msg: MessageEvent) => {
           if (engineRef.current.mode !== 'live') return;
@@ -1092,7 +1104,7 @@ export default function App() {
       clearInterval(demoInterval);
       clearInterval(uiTicker);
     };
-  }, [handleNightwatchEvent, runScenario, syncUiFromEngine]);
+  }, [handleNightwatchEvent, runScenario, syncUiFromEngine, enterLive]);
 
   // Keyboard shortcuts: C (Console), M (BGM), S (SFX), F (Fullscreen), H (Cinema)
   useEffect(() => {
@@ -3176,9 +3188,12 @@ export default function App() {
   };
 
   const toggleMode = () => {
-    const next = mode === 'live' ? 'demo' : 'live';
-    engineRef.current.mode = next;
-    setModeState(next);
+    if (mode === 'live') {
+      engineRef.current.mode = 'demo';
+      setModeState('demo');
+    } else {
+      enterLive();
+    }
   };
 
   const toggleViewVersion = () => {
