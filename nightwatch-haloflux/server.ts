@@ -350,7 +350,6 @@ async function startServer() {
       'vite.config.ts',
       'index.html',
       'metadata.json',
-      '.env.example',
       'server.ts',
       'src/main.tsx',
       'src/index.css',
@@ -486,8 +485,9 @@ pause
   }
 
   const PORT = Number(process.env.PORT || 3000);
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Nightwatch x HALOFLUX] Server listening on http://0.0.0.0:${PORT}`);
+  // 预览服务只绑本机，避免把无鉴权的模拟/解封接口暴露到局域网
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`[Nightwatch x HALOFLUX] Server listening on http://127.0.0.1:${PORT}`);
   });
 }
 

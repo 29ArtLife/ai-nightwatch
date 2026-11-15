@@ -8,8 +8,10 @@ Nightwatch x HALOFLUX 轻量 Web 可视化桥接服务（仅使用 Python 3.12 �
 from __future__ import annotations
 
 import argparse
+import hmac
 import ipaddress
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -18,12 +20,27 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 DB_PATH = ROOT / "data" / "nightwatch.db"
 HTML_PATH = ROOT / "docs" / "haloflux" / "nightwatch-halo.html"
 AUDIO_DIR = ROOT / "docs" / "haloflux" / "audio"
+BRIDGE_TOKEN = os.environ.get("NW_BRIDGE_TOKEN", "")
+LAST_UNBAN = 0.0
+
+
+def now_z() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def chain_ok() -> bool:
+    try:
+        from app.store import Store
+        return bool(Store(str(DB_PATH)).verify_chain().get("ok"))
+    except Exception:
+        return False
 
 
 def open_ro_db() -> sqlite3.Connection | None:
@@ -49,7 +66,7 @@ def get_snapshot() -> dict:
     try:
         cur = conn.cursor()
         meta = {r["k"]: r["v"] for r in cur.execute("SELECT k, v FROM meta")}
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = now_z()
         bans = [
             dict(r)
             for r in cur.execute(
@@ -63,7 +80,7 @@ def get_snapshot() -> dict:
         return {
             "event_count": int(meta.get("event_count", max_id)),
             "bans": bans,
-            "chain_ok": True,
+            "chain_ok": chain_ok(),
             "autonomy": read_flag("autonomy.flag", "auto"),
             "autopilot": read_flag("autopilot.flag", "on") in ("on", "true", "1"),
             "max_id": max_id,
@@ -93,6 +110,25 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         return  # 保持控制台干净
 
+    def _authed(self, query: dict) -> bool:
+        if not BRIDGE_TOKEN:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and hmac.compare_digest(auth[7:], BRIDGE_TOKEN):
+            return True
+        token = (query.get("token") or [""])[0]
+        return bool(token) and hmac.compare_digest(token, BRIDGE_TOKEN)
+
+    def _same_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        return urlparse(origin).netloc == self.headers.get("Host", "")
+
+    def _chunk(self, data: bytes) -> None:
+        self.wfile.write(f"{len(data):X}\r\n".encode() + data + b"\r\n")
+        self.wfile.flush()
+
     def _send_json(self, obj: dict, code: int = 200) -> None:
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
@@ -114,21 +150,39 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path, query = parsed.path, parse_qs(parsed.query)
         if path in ("/", "/index.html", "/nightwatch-halo.html"):
             self._send_file(HTML_PATH, "text/html; charset=utf-8")
         elif path.startswith("/audio/"):
             fname = Path(path).name
             self._send_file(AUDIO_DIR / fname, "audio/mpeg")
-        elif path == "/api/snapshot":
-            self._send_json(get_snapshot())
-        elif path == "/events":
-            self._handle_sse()
+        elif path.startswith("/api/") or path == "/events":
+            if not self._authed(query):
+                self._send_json({"ok": False, "error": "unauthorized"}, 401)
+                return
+            if path == "/api/snapshot":
+                self._send_json(get_snapshot())
+            elif path == "/events":
+                self._handle_sse()
+            else:
+                self.send_error(HTTPStatus.NOT_FOUND)
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
+        global LAST_UNBAN
+        parsed = urlparse(self.path)
+        path, query = parsed.path, parse_qs(parsed.query)
+        if not self._same_origin():
+            self._send_json({"ok": False, "error": "cross-origin denied"}, 403)
+            return
+        if not self._authed(query):
+            self._send_json({"ok": False, "error": "unauthorized"}, 401)
+            return
+        if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            self._send_json({"ok": False, "error": "content-type must be application/json"}, 415)
+            return
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(min(length, 8192)) if length > 0 else b"{}"
         try:
@@ -138,12 +192,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/unban":
+            if time.time() - LAST_UNBAN < 1.0:
+                self._send_json({"ok": False, "error": "rate limited"}, 429)
+                return
             ip_str = str(payload.get("ip", "")).strip()
             try:
                 ipaddress.IPv4Address(ip_str)
             except Exception:
                 self._send_json({"ok": False, "error": "invalid ipv4"}, 400)
                 return
+            LAST_UNBAN = time.time()
             proc = subprocess.run(
                 [sys.executable, "-m", "app.cli", "unban", ip_str, "--operator", "web-hud", "--reason", "haloflux unban"],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=10
@@ -168,35 +226,40 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
 
         snap = get_snapshot()
-        last_id = max(0, snap["max_id"] - 15)  # 初次连上回放最近 15 条，立刻出效果
+        last_id = max(0, snap["max_id"] - 15)  # 初次连上回放最近 15 条
         last_snap_ts = 0.0
+        last_ping = time.monotonic()
 
         try:
+            self._chunk(b"retry: 2000\n\n")
             while True:
                 now = time.monotonic()
                 if now - last_snap_ts >= 2.0:
                     snap = get_snapshot()
-                    msg = f"event: snapshot\ndata: {json.dumps(snap, ensure_ascii=False)}\n\n"
-                    self.wfile.write(msg.encode("utf-8"))
-                    self.wfile.flush()
+                    self._chunk(
+                        f"event: snapshot\ndata: {json.dumps(snap, ensure_ascii=False)}\n\n"
+                        .encode("utf-8"))
                     last_snap_ts = now
+                if now - last_ping >= 15.0:
+                    self._chunk(b": ping\n\n")
+                    last_ping = now
 
                 events = fetch_events_since(last_id)
                 for ev in events:
                     last_id = max(last_id, int(ev["id"]))
-                    # 过滤掉纯高频正常 http_request 噪声，只推送核心攻防与 AI 事件
                     if ev["kind"] in ("http_request", "parse_error"):
                         continue
-                    msg = f"event: nw_event\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
-                    self.wfile.write(msg.encode("utf-8"))
-                if events:
-                    self.wfile.flush()
+                    self._chunk(
+                        f"event: nw_event\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                        .encode("utf-8"))
 
                 time.sleep(0.35)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
 

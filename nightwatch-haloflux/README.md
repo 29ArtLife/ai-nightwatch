@@ -37,6 +37,23 @@ cp nightwatch-haloflux/docs/haloflux/nightwatch-halo*.html docs/haloflux/
 ssh -N -L 8765:127.0.0.1:8765 user@nightwatch-host
 ```
 
+### 桥接安全
+
+- 默认只监听 `127.0.0.1`，不要改成 `0.0.0.0` 直接暴露到局域网；
+- `POST /api/unban` 只接受同源、`application/json` 请求，并有 1 次/秒限流；
+- 如需额外鉴权，启动时设置 token：
+
+```bash
+NW_BRIDGE_TOKEN='随机字符串' .venv/bin/python scripts/web_bridge.py --host 127.0.0.1 --port 8765
+```
+
+前端通过 `?token=` 或 `Authorization: Bearer` 访问 `/api/*` 与 `/events`。
+
+### 许可证
+
+本子目录的 HALOFLUX 视觉素材按 **PolyForm Noncommercial 1.0.0** 授权，仅非商业使用。
+完整许可证与 Required Notice 见 [`LICENSE`](LICENSE)。主项目其他部分不因本目录而改变许可。
+
 ## 第三方署名
 
 光环视觉基于 HALOFLUX by Ryder191，原始作品按 PolyForm Noncommercial License 1.0.0 授权。[原始许可及版权声明](https://github.com/Ryder191/haloflux/blob/02174503d0f391b1bb2537b8cad75e8e5f9997f2/LICENSE)
