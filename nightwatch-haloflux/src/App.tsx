@@ -156,6 +156,33 @@ function OrbOpsPanel({ side, ops, live }: { side: 'blue' | 'red'; ops: CombatOpe
   );
 }
 
+
+function AgentLivePanel({ ops, live }: { ops: CombatOperationLog[]; live: boolean }) {
+  return (
+    <div className="agent-live" aria-label="DeepSeek Agent 实时工具调用">
+      <div className="agent-live-head">
+        <span>DEEPSEEK AGENT // 实时工具调用</span>
+        <i>{live ? 'LIVE' : 'DEMO'}</i>
+      </div>
+      {ops.length === 0 ? (
+        <div className="agent-live-empty">等待 Agent 工具调用...</div>
+      ) : (
+        ops.map((op, idx) => (
+          <div key={`${op.id}-${op.ts}-${idx}`} className="agent-live-row">
+            <span className="agent-live-id">#{op.id}</span>
+            <div className="agent-live-body">
+              <div className="agent-live-title">{op.actionTitle}</div>
+              <div className="agent-live-cmd" title={op.commandLine}>{op.commandLine}</div>
+              <div className="agent-live-desc">{op.detailDesc}</div>
+            </div>
+            <span className="agent-live-time">{op.ts}</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // React UI state for DOM overlays & panels
   const [viewVersion, setViewVersion] = useState<'v2' | 'v1'>('v2');
@@ -3208,6 +3235,7 @@ export default function App() {
   const nowMs = Date.now();
   const blueOps = combatOps.filter((o) => o.actorCamp !== 'red').slice(-3).reverse();
   const redOps = combatOps.filter((o) => o.actorCamp === 'red').slice(-3).reverse();
+  const agentOps = combatOps.filter((o) => o.actorCamp === 'ai').slice(-6).reverse();
 
   return (
     <div className="app">
@@ -3510,6 +3538,7 @@ export default function App() {
           <>
             <OrbOpsPanel side="blue" ops={blueOps} live={mode === 'live'} />
             <OrbOpsPanel side="red" ops={redOps} live={mode === 'live'} />
+            <AgentLivePanel ops={agentOps} live={mode === 'live'} />
           </>
         )}
 
