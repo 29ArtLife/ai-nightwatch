@@ -206,6 +206,7 @@ export default function App() {
   const [blueHp, setBlueHp] = useState<number>(MAX_CAMP_HP);
   const [redHp, setRedHp] = useState<number>(MAX_CAMP_HP);
   const [combatOps, setCombatOps] = useState<CombatOperationLog[]>([]);
+  const [agentOps, setAgentOps] = useState<CombatOperationLog[]>([]);
 
   const [eventCount, setEventCount] = useState(1);
   const [chainOk, setChainOk] = useState(true);
@@ -385,6 +386,7 @@ export default function App() {
     eng.activeBans.clear();
     eng.redNodes.clear();
     setCombatOps([]);
+    setAgentOps([]);
     setModeState('live');
     syncUiFromEngine();
   }, [syncUiFromEngine]);
@@ -454,6 +456,12 @@ export default function App() {
           const next = [...prev, opLog];
           return next.length > 12 ? next.slice(next.length - 12) : next;
         });
+        if (opLog.actorCamp === 'ai') {
+          setAgentOps((prev) => {
+            const next = [...prev, opLog];
+            return next.length > 8 ? next.slice(next.length - 8) : next;
+          });
+        }
       }
 
       // Register or update Red Node on the Right Offensive Sphere
@@ -3235,7 +3243,7 @@ export default function App() {
   const nowMs = Date.now();
   const blueOps = combatOps.filter((o) => o.actorCamp !== 'red').slice(-3).reverse();
   const redOps = combatOps.filter((o) => o.actorCamp === 'red').slice(-3).reverse();
-  const agentOps = combatOps.filter((o) => o.actorCamp === 'ai').slice(-6).reverse();
+  const agentOpsLive = agentOps.slice(-6).reverse();
 
   return (
     <div className="app">
@@ -3538,7 +3546,7 @@ export default function App() {
           <>
             <OrbOpsPanel side="blue" ops={blueOps} live={mode === 'live'} />
             <OrbOpsPanel side="red" ops={redOps} live={mode === 'live'} />
-            <AgentLivePanel ops={agentOps} live={mode === 'live'} />
+            <AgentLivePanel ops={agentOpsLive} live={mode === 'live'} />
           </>
         )}
 

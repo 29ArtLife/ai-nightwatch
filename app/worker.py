@@ -74,7 +74,15 @@ class Worker:
             time.sleep(1)
 
     def enqueue_event(self, kind: str, ip: str, evidence: dict):
-        """Agent 等外部写入统一走单写线程，保证 id 顺序与 SSE 顺序一致。"""
+        """Agent 等外部写入统一走单写线程，保证 id 顺序与 SSE 顺序一致。
+
+        CLI 的 ai 子命令没有启动 Worker 线程；这种情况直接写账本，
+        否则 agent_tool/agent_run 只进队列、前端和桥接永远看不到。
+        """
+        if not self._threads:
+            row = self.store.append_event(now_ts(), kind, ip, evidence)
+            self.publish(row)
+            return
         self.q.put(("__event__", kind, json.dumps(evidence, ensure_ascii=False), ip, 0))
 
     def process_line(self, source_name: str, parser_name: str, line: str,
