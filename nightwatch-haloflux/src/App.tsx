@@ -157,28 +157,35 @@ function OrbOpsPanel({ side, ops, live }: { side: 'blue' | 'red'; ops: CombatOpe
 }
 
 
-function AgentLivePanel({ ops, live }: { ops: CombatOperationLog[]; live: boolean }) {
+
+function OrbLiveLog({ ops, live }: { ops: CombatOperationLog[]; live: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [ops]);
   return (
-    <div className="agent-live" aria-label="DeepSeek Agent 实时工具调用">
-      <div className="agent-live-head">
-        <span>DEEPSEEK AGENT // 实时工具调用</span>
+    <div className="orb-log" aria-label="蓝方实时操作记录">
+      <div className="orb-log-head">
+        <span>BLUE BASTION // 实时操作记录</span>
         <i>{live ? 'LIVE' : 'DEMO'}</i>
       </div>
-      {ops.length === 0 ? (
-        <div className="agent-live-empty">等待 Agent 工具调用...</div>
-      ) : (
-        ops.map((op, idx) => (
-          <div key={`${op.id}-${op.ts}-${idx}`} className="agent-live-row">
-            <span className="agent-live-id">#{op.id}</span>
-            <div className="agent-live-body">
-              <div className="agent-live-title">{op.actionTitle}</div>
-              <div className="agent-live-cmd" title={op.commandLine}>{op.commandLine}</div>
-              <div className="agent-live-desc">{op.detailDesc}</div>
+      <div className="orb-log-scroll" ref={ref}>
+        {ops.length === 0 ? (
+          <div className="orb-log-empty">等待真实攻防事件...</div>
+        ) : (
+          ops.map((op, idx) => (
+            <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-log-row ${op.actorCamp}`}>
+              <span className="orb-log-time">{op.ts}</span>
+              <span className="orb-log-tag">
+                {op.actorCamp === 'red' ? 'RED' : op.actorCamp === 'ai' ? 'AI' : 'BLUE'}
+              </span>
+              <span className="orb-log-title">{op.actionTitle}</span>
+              <span className="orb-log-cmd" title={op.commandLine}>{op.commandLine}</span>
             </div>
-            <span className="agent-live-time">{op.ts}</span>
-          </div>
-        ))
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -206,7 +213,6 @@ export default function App() {
   const [blueHp, setBlueHp] = useState<number>(MAX_CAMP_HP);
   const [redHp, setRedHp] = useState<number>(MAX_CAMP_HP);
   const [combatOps, setCombatOps] = useState<CombatOperationLog[]>([]);
-  const [agentOps, setAgentOps] = useState<CombatOperationLog[]>([]);
 
   const [eventCount, setEventCount] = useState(1);
   const [chainOk, setChainOk] = useState(true);
@@ -386,7 +392,6 @@ export default function App() {
     eng.activeBans.clear();
     eng.redNodes.clear();
     setCombatOps([]);
-    setAgentOps([]);
     setModeState('live');
     syncUiFromEngine();
   }, [syncUiFromEngine]);
@@ -454,14 +459,8 @@ export default function App() {
         eng.redHp = nextHp.redHp <= 200 ? MAX_CAMP_HP : nextHp.redHp;
         setCombatOps((prev) => {
           const next = [...prev, opLog];
-          return next.length > 12 ? next.slice(next.length - 12) : next;
+          return next.length > 40 ? next.slice(next.length - 40) : next;
         });
-        if (opLog.actorCamp === 'ai') {
-          setAgentOps((prev) => {
-            const next = [...prev, opLog];
-            return next.length > 8 ? next.slice(next.length - 8) : next;
-          });
-        }
       }
 
       // Register or update Red Node on the Right Offensive Sphere
@@ -3241,9 +3240,7 @@ export default function App() {
   };
 
   const nowMs = Date.now();
-  const blueOps = combatOps.filter((o) => o.actorCamp !== 'red').slice(-3).reverse();
   const redOps = combatOps.filter((o) => o.actorCamp === 'red').slice(-3).reverse();
-  const agentOpsLive = agentOps.slice(-6).reverse();
 
   return (
     <div className="app">
@@ -3544,9 +3541,8 @@ export default function App() {
 
         {viewVersion === 'v2' && (
           <>
-            <OrbOpsPanel side="blue" ops={blueOps} live={mode === 'live'} />
+            <OrbLiveLog ops={combatOps} live={mode === 'live'} />
             <OrbOpsPanel side="red" ops={redOps} live={mode === 'live'} />
-            <AgentLivePanel ops={agentOpsLive} live={mode === 'live'} />
           </>
         )}
 
