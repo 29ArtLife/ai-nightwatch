@@ -159,29 +159,45 @@ function OrbOpsPanel({ side, ops, live }: { side: 'blue' | 'red'; ops: CombatOpe
 
 
 function OrbLiveLog({ ops, live }: { ops: CombatOperationLog[]; live: boolean }) {
-  const rows = ops.length ? [...ops, ...ops] : [];
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!ops.length) {
+      setVisible(false);
+      return;
+    }
+    setVisible(true);
+    const hide = window.setTimeout(() => setVisible(false), 8000);
+    const id = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    });
+    return () => {
+      window.clearTimeout(hide);
+      cancelAnimationFrame(id);
+    };
+  }, [ops.length]);
+  const shown = visible ? ops : [];
   return (
     <div className="orb-log" aria-label="左侧蓝盘实时操作记录">
       <div className="orb-log-head">
         <span>BLUE BASTION // 实时操作记录</span>
         <i>{live ? 'LIVE' : 'DEMO'}</i>
       </div>
-      <div className="orb-log-scroll">
-        {rows.length === 0 ? (
-          <div className="orb-log-empty">等待真实攻防事件...</div>
+      <div className="orb-log-scroll" ref={ref}>
+        {shown.length === 0 ? (
+          <div className="orb-log-empty">暂无操作</div>
         ) : (
-          <div className="orb-log-track">
-            {rows.map((op, idx) => (
-              <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-log-row ${op.actorCamp}`}>
-                <span className="orb-log-time">{op.ts}</span>
-                <span className="orb-log-tag">
-                  {op.actorCamp === 'red' ? 'RED' : op.actorCamp === 'ai' ? 'AI' : 'BLUE'}
-                </span>
-                <span className="orb-log-title">{op.actionTitle}</span>
-                <span className="orb-log-cmd" title={op.commandLine}>{op.commandLine}</span>
-              </div>
-            ))}
-          </div>
+          shown.map((op, idx) => (
+            <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-log-row ${op.actorCamp}`}>
+              <span className="orb-log-time">{op.ts}</span>
+              <span className="orb-log-tag">
+                {op.actorCamp === 'red' ? 'RED' : op.actorCamp === 'ai' ? 'AI' : 'BLUE'}
+              </span>
+              <span className="orb-log-title">{op.actionTitle}</span>
+              <span className="orb-log-cmd" title={op.commandLine}>{op.commandLine}</span>
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -986,6 +1002,7 @@ export default function App() {
   // SSE Connection + Demo Replay Timer + 1Hz UI Sync
   useEffect(() => {
     let es: EventSource | null = null;
+    let retryTimer: number | null = null;
 
     const connectSSE = () => {
       try {
@@ -1025,6 +1042,12 @@ export default function App() {
           if (es) {
             es.close();
             es = null;
+          }
+          if (retryTimer == null) {
+            retryTimer = window.setTimeout(() => {
+              retryTimer = null;
+              connectSSE();
+            }, 2000);
           }
         };
       } catch {
@@ -1132,6 +1155,7 @@ export default function App() {
 
     return () => {
       if (es) es.close();
+      if (retryTimer != null) window.clearTimeout(retryTimer);
       clearTimeout(bootTimer);
       clearInterval(demoInterval);
       clearInterval(uiTicker);

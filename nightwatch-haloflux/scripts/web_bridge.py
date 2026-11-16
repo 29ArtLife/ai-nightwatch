@@ -231,7 +231,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         snap = get_snapshot()
-        last_id = max(0, snap["max_id"] - 15)  # 初次连上回放最近 15 条
+        last_id = snap["max_id"]  # 不回放历史；只推送连接后的新操作
         last_snap_ts = 0.0
         last_ping = time.monotonic()
 

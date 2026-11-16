@@ -1000,7 +1000,7 @@ header.nw-header {
 .orb-log-scroll {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 8%, #000 92%, transparent);
@@ -1008,14 +1008,7 @@ header.nw-header {
 .orb-log-scroll::-webkit-scrollbar {
   display: none;
 }
-.orb-log-track {
-  animation: orb-log-scroll 28s linear infinite;
-  will-change: transform;
-}
-@keyframes orb-log-scroll {
-  from { transform: translateY(0); }
-  to { transform: translateY(-50%); }
-}
+
 .orb-log-row {
   padding: 3px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
