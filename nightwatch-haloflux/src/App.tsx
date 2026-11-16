@@ -159,31 +159,29 @@ function OrbOpsPanel({ side, ops, live }: { side: 'blue' | 'red'; ops: CombatOpe
 
 
 function OrbLiveLog({ ops, live }: { ops: CombatOperationLog[]; live: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [ops]);
+  const rows = ops.length ? [...ops, ...ops] : [];
   return (
-    <div className="orb-log" aria-label="蓝方实时操作记录">
+    <div className="orb-log" aria-label="左侧蓝盘实时操作记录">
       <div className="orb-log-head">
         <span>BLUE BASTION // 实时操作记录</span>
         <i>{live ? 'LIVE' : 'DEMO'}</i>
       </div>
-      <div className="orb-log-scroll" ref={ref}>
-        {ops.length === 0 ? (
+      <div className="orb-log-scroll">
+        {rows.length === 0 ? (
           <div className="orb-log-empty">等待真实攻防事件...</div>
         ) : (
-          ops.map((op, idx) => (
-            <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-log-row ${op.actorCamp}`}>
-              <span className="orb-log-time">{op.ts}</span>
-              <span className="orb-log-tag">
-                {op.actorCamp === 'red' ? 'RED' : op.actorCamp === 'ai' ? 'AI' : 'BLUE'}
-              </span>
-              <span className="orb-log-title">{op.actionTitle}</span>
-              <span className="orb-log-cmd" title={op.commandLine}>{op.commandLine}</span>
-            </div>
-          ))
+          <div className="orb-log-track">
+            {rows.map((op, idx) => (
+              <div key={`${op.id}-${op.ts}-${idx}`} className={`orb-log-row ${op.actorCamp}`}>
+                <span className="orb-log-time">{op.ts}</span>
+                <span className="orb-log-tag">
+                  {op.actorCamp === 'red' ? 'RED' : op.actorCamp === 'ai' ? 'AI' : 'BLUE'}
+                </span>
+                <span className="orb-log-title">{op.actionTitle}</span>
+                <span className="orb-log-cmd" title={op.commandLine}>{op.commandLine}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
